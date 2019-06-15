@@ -90,26 +90,8 @@ void GnnMapper::slice_task(const MapperContext ctx,
                            const SliceTaskInput& input,
                            SliceTaskOutput& output)
 {
-  if (task.task_id == UPD_NODE_TASK_ID)
-  {
-    if (gpuSlices.size() > 0) {
-      output.slices = gpuSlices;
-      return;
-    }
-    Rect<1> input_rect = input.domain;
-    unsigned cnt = 0;
-    for (PointInRectIterator<1> it(input_rect); it(); it++) {
-      TaskSlice slice;
-      Rect<1> task_rect(*it, *it);
-      slice.domain = task_rect;
-      slice.proc = allGPUs[cnt % numNodes]->at(((cnt/numNodes)*9) % local_gpus.size());
-      cnt ++;
-      slice.recurse = false;
-      slice.stealable = false;
-      gpuSlices.push_back(slice);
-    }
-    output.slices = gpuSlices;
-  } else if (task.task_id == LOAD_TASK_ID) {
+  if (task.task_id == LOAD_TASK_ID
+  ||  task.task_id == TOP_LEVEL_TASK_ID) {
     if (cpuSlices.size() > 0) {
       output.slices = cpuSlices;
       return;
@@ -128,7 +110,23 @@ void GnnMapper::slice_task(const MapperContext ctx,
     }
     output.slices = cpuSlices;
   } else {
-    DefaultMapper::slice_task(ctx, task, input, output);
+    if (gpuSlices.size() > 0) {
+      output.slices = gpuSlices;
+      return;
+    }
+    Rect<1> input_rect = input.domain;
+    unsigned cnt = 0;
+    for (PointInRectIterator<1> it(input_rect); it(); it++) {
+      TaskSlice slice;
+      Rect<1> task_rect(*it, *it);
+      slice.domain = task_rect;
+      slice.proc = allGPUs[cnt % numNodes]->at(((cnt/numNodes)*9) % local_gpus.size());
+      cnt ++;
+      slice.recurse = false;
+      slice.stealable = false;
+      gpuSlices.push_back(slice);
+    }
+    output.slices = gpuSlices;
   }
 }
 
