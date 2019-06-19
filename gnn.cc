@@ -166,6 +166,31 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<InDegreeNorm::update_task>(
         registrar, "InDegreeNorm Update Task");
   }
+  // Linear
+  {
+    TaskVariantRegistrar registrar(LINEAR_FWD_TASK_ID,
+                                   "Linear Forward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Linear::forward_task>(
+        registrar, "Linear Forward Task");
+  }
+  {
+    TaskVariantRegistrar registrar(LINEAR_BWD_TASK_ID,
+                                   "Linear Backward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Linear::backward_task>(
+        registrar, "Linear Backward Task");
+  }
+  {
+    TaskVariantRegistrar registrar(LINEAR_UPD_TASK_ID,
+                                   "Linear Update");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Linear::update_task>(
+        registrar, "Linear Update Task");
+  }
 
   Runtime::add_registration_callback(update_mappers);
 
@@ -182,11 +207,10 @@ Model::Model(const Graph& _graph,
              Context _ctx,
              Runtime* _runtime,
              int _inputDim)
-: myGraph(_graph), ctx(_ctx), runtime(_runtime),
-numParts(_graph.numParts)
+: myGraph(_graph), ctx(_ctx), runtime(_runtime)
 {
   input = create_node_tensor(_inputDim);
-  Rect<1> task_rect(0, numParts-1);
+  Rect<1> task_rect(0, _graph.numParts-1);
   taskIS = runtime->create_index_space(ctx, task_rect);
 }
 
@@ -216,15 +240,71 @@ Tensor Model::create_node_tensor(int numHidden) const
   }
   // Create logical partitions
   {
-    Rect<1> color_rect(Point<1>(0), Point<1>(numParts-1));
+    Rect<1> color_rect(Point<1>(0), Point<1>(myGraph.numParts-1));
     LegionRuntime::Arrays::Rect<1> color_array(
         LegionRuntime::Arrays::Point<1>(0),
-        LegionRuntime::Arrays::Point<1>(numParts-1));
+        LegionRuntime::Arrays::Point<1>(myGraph.numParts-1));
     Domain color_domain = Domain::from_rect<1>(color_array);
     DomainColoring output_coloring;
     for (PointInRectIterator<1> it(color_rect); it(); it++) {
       LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(
           ctx, myGraph.rowPtrLP, DomainPoint(*it));
+      Rect<1> sub_rect = runtime->get_index_space_domain(
+          ctx, sub_lr.get_index_space());
+      LegionRuntime::Arrays::Rect<2> output_subrect(
+          LegionRuntime::Arrays::Point<2>(
+              LegionRuntime::Arrays::make_point(0, sub_rect.lo[0])),
+          LegionRuntime::Arrays::Point<2>(
+              LegionRuntime::Arrays::make_point(numHidden-1, sub_rect.hi[0])));
+      output_coloring[*it] = Domain::from_rect<2>(output_subrect);
+      printf("lo(%lld %lld) hi(%lld %lld)\n", output_subrect.lo[0],
+             output_subrect.lo[1], output_subrect.hi[0], output_subrect.hi[1]);
+    }
+    IndexPartition output_ip = runtime->create_index_partition(
+        ctx, outputIS, color_domain, output_coloring, true);
+    assert(runtime->is_index_partition_disjoint(ctx, output_ip));
+    assert(runtime->is_index_partition_complete(ctx, output_ip));
+    t.part = runtime->get_logical_partition(ctx, t.region, output_ip);
+    t.part_grad = runtime->get_logical_partition(ctx, t.region_grad, output_ip);
+  }
+  return t;
+}
+
+Tensor Model::create_edge_tensor(int numHidden) const
+{
+  Tensor t(Tensor::EDGE_TENSOR);
+  t.numDim = 2;
+  t.dims[0] = numHidden;
+  t.dims[1] = myGraph.numEdges;
+  Rect<1> rectColIdx = runtime->get_index_space_domain(
+                             ctx, myGraph.colIdxLR.get_index_space());
+  // Assert row_ptr_lr matches myGraph.numNodes
+  assert(rectColIdx.volume() == myGraph.numEdges);
+  Rect<2> outputRect(Point<2>(0, 0), Point<2>(numHidden-1, myGraph.numEdges-1));
+  printf("outputRect: lo(%lld %lld) hi(%lld %lld)\n", outputRect.lo[0], 
+         outputRect.lo[1], outputRect.hi[0], outputRect.hi[1]);
+  IndexSpaceT<2> outputIS =
+      runtime->create_index_space(ctx, outputRect);
+  runtime->attach_name(outputIS, "edge_index_space");
+  // Create logical regions
+  {
+    FieldSpace outputFS = runtime->create_field_space(ctx);
+    FieldAllocator allocator = runtime->create_field_allocator(ctx, outputFS);
+    allocator.allocate_field(sizeof(DATATYPE), FID_DATA);
+    t.region = runtime->create_logical_region(ctx, outputIS, outputFS);
+    t.region_grad = runtime->create_logical_region(ctx, outputIS, outputFS);
+  }
+  // Create logical partitions
+  {
+    Rect<1> color_rect(Point<1>(0), Point<1>(myGraph.numParts-1));
+    LegionRuntime::Arrays::Rect<1> color_array(
+        LegionRuntime::Arrays::Point<1>(0),
+        LegionRuntime::Arrays::Point<1>(myGraph.numParts-1));
+    Domain color_domain = Domain::from_rect<1>(color_array);
+    DomainColoring output_coloring;
+    for (PointInRectIterator<1> it(color_rect); it(); it++) {
+      LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(
+          ctx, myGraph.colIdxLP, DomainPoint(*it));
       Rect<1> sub_rect = runtime->get_index_space_domain(
           ctx, sub_lr.get_index_space());
       LegionRuntime::Arrays::Rect<2> output_subrect(

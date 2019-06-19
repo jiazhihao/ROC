@@ -93,6 +93,24 @@ void ScatterGather::forward_task(const Task *task,
 {
   assert(regions.size() == 4);
   assert(task->regions.size() == 4);
+  //const ScatterGather* op = (ScatterGather*) task->args;
+  ResourceManager* manager = *((ResourceManager**) task->local_args);
+  assert(manager->proc_id == task->current_proc.id);
+  manager->reset();
+  TensorAccessorRO<NodeStruct, 1> accRowPtr(
+      regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
+  TensorAccessorRO<EdgeStruct, 1> accColIdx(
+      regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
+  TensorAccessorRO<DATATYPE, 2> accInput(
+      regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
+  TensorAccessorWO<DATATYPE, 2> accOutput(
+      regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
+  // Check memories are correctly mapped
+  assert(accRowPtr.memory.kind() == Memory::GPU_FB_MEM);
+  assert(accColIdx.memory.kind() == Memory::GPU_FB_MEM);
+  assert(accInput.memory.kind() == Memory::Z_COPY_MEM);
+  assert(accOutput.memory.kind() == Memory::Z_COPY_MEM);
+#ifdef DEADCODE
   const AccessorRO<NodeStruct, 1> accRowPtr(regions[0], FID_DATA);
   const AccessorRO<EdgeStruct, 1> accColIdx(regions[1], FID_DATA);
   const AccessorRO<DATATYPE, 2> accInput(regions[2], FID_DATA);
@@ -113,30 +131,23 @@ void ScatterGather::forward_task(const Task *task,
   const EdgeStruct* colIdxs = accColIdx.ptr(rectColIdx);
   const DATATYPE* zcInput = accInput.ptr(rectInput);
   DATATYPE* zcOutput = accOutput.ptr(rectOutput);
-  V_ID rowLeft = rectRowPtr.lo[0], rowRight = rectRowPtr.hi[0];
-  E_ID colLeft = rectColIdx.lo[0], colRight = rectColIdx.hi[0];
-  int hiddenDim = rectInput.hi[0]-rectInput.lo[0]+1;
-  assert(hiddenDim == rectOutput.hi[0]-rectOutput.lo[0]+1);
-  assert(rectOutput.lo[1] == rectRowPtr.lo[0]);
-  assert(rectOutput.hi[1] == rectRowPtr.hi[0]);
+#endif
+  V_ID rowLeft = accRowPtr.rect.lo[0], rowRight = accRowPtr.rect.hi[0];
+  E_ID colLeft = accColIdx.rect.lo[0], colRight = accColIdx.rect.hi[0];
+  int hiddenDim = accInput.rect.hi[0]-accInput.rect.lo[0]+1;
+  assert(hiddenDim == accOutput.rect.hi[0]-accOutput.rect.lo[0]+1);
+  assert(accOutput.rect.lo[1] == accRowPtr.rect.lo[0]);
+  assert(accOutput.rect.hi[1] == accRowPtr.rect.hi[0]);
 
-  //const ScatterGather* op = (ScatterGather*) task->args;
-  ResourceManager* manager = *((ResourceManager**) task->local_args);
-  assert(manager->proc_id == task->current_proc.id);
-  std::set<int> assigned;
-  int inputId = manager->assign(regions[2].get_logical_region(),
-                                rectInput.volume(), assigned);
-  int outputId = manager->assign(regions[3].get_logical_region(),
-                                 rectOutput.volume(), assigned);
-  copy_kernel<<<GET_BLOCKS(rectInput.volume()), CUDA_NUM_THREADS>>>(
-      manager->fbCache[inputId].ptr, zcInput, rectInput.volume());
-  aggre_coop_kernel<<<GET_BLOCKS(rectOutput.volume()), CUDA_NUM_THREADS>>>(
-      rowLeft, rowRight, colLeft, hiddenDim, rowPtrs, colIdxs,
-      manager->fbCache[inputId].ptr, manager->fbCache[outputId].ptr);
+  copy_kernel<<<GET_BLOCKS(accInput.rect.volume()), CUDA_NUM_THREADS>>>(
+      accInput.fbCache, accInput.ptr, accInput.rect.volume());
+  aggre_coop_kernel<<<GET_BLOCKS(accOutput.rect.volume()), CUDA_NUM_THREADS>>>(
+      rowLeft, rowRight, colLeft, hiddenDim, accRowPtr.ptr, accColIdx.ptr,
+      accInput.fbCache, accOutput.fbCache);
   // Need to copy results back to new_pr
   cudaDeviceSynchronize();
-  checkCUDA(cudaMemcpy(zcOutput, manager->fbCache[outputId].ptr,
-                       rectOutput.volume() * sizeof(DATATYPE),
+  checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
+                       accOutput.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
   //copy_kernel<<<GET_BLOCKS(rectOutput.volume()), CUDA_NUM_THREADS>>>(
   //    zcOuptut, manager->fbCache[outputId], rectOutput.volume());

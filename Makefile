@@ -29,8 +29,8 @@ ALT_MAPPERS     ?= 0		# Include alternative mappers (not recommended)
 # Put the binary file name here
 OUTFILE		?= gnn
 # List all the application source files here
-GEN_SRC		?= gnn.cc gnn_mapper.cc scattergather.cc graphnorm.cc resourcemanager.cc	# .cc files
-GEN_GPU_SRC	?= load_task.cu nccl_task.cu scattergather_kernel.cu graphnorm_kernel.cu	# .cu files
+GEN_SRC		?= gnn.cc gnn_mapper.cc scattergather.cc graphnorm.cc linear.cc resourcemanager.cc	# .cc files
+GEN_GPU_SRC	?= load_task.cu nccl_task.cu scattergather_kernel.cu graphnorm_kernel.cu linear_kernel.cu	# .cu files
 
 # You can modify these variables, some will be appended to by the runtime makefile
 INC_FLAGS	?= -Inccl/build/include -Icub

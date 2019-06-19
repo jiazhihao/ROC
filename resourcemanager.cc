@@ -21,13 +21,17 @@ ResourceManager::ResourceManager(void)
 ResourceManager::~ResourceManager(void)
 {}
 
-int ResourceManager::assign(LogicalRegion lr,
-                            size_t numElement,
-                            std::set<int>& assigned)
+void ResourceManager::reset(void)
 {
-  // See if we have lr on one cache
+  assigned.clear();
+}
+
+int ResourceManager::assign(PhysicalRegion pr,
+                            size_t numElement)
+{
+  // See if we have pr on one cache
   for (int i = 0; i < MAX_NUM_CACHES; i++) {
-    if (fbCache[i].region == lr) {
+    if (fbCache[i].region == pr.get_logical_region()) {
       printf("[%d] numElement(%zu) volume(%zu)\n", i, numElement, fbCache[i].volume);
       assert(numElement <= fbCache[i].volume);
       assigned.insert(i);
@@ -35,7 +39,7 @@ int ResourceManager::assign(LogicalRegion lr,
     }
   }
   int bestId = -1;
-  // If not, assign lr to the smallest available cache
+  // If not, assign pr to the smallest available cache
   for (int i = 0; i < MAX_NUM_CACHES; i++) {
     if ((assigned.find(i) == assigned.end())
     && (fbCache[i].volume >= numElement)) {
@@ -46,7 +50,7 @@ int ResourceManager::assign(LogicalRegion lr,
   }
 
   assert(bestId != -1);
-  fbCache[bestId].region = lr;
+  fbCache[bestId].region = pr.get_logical_region();
   assigned.insert(bestId);
   return bestId;
 }
