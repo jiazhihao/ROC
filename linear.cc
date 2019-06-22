@@ -17,23 +17,28 @@
 
 LegionRuntime::Logger::Category log_linear("gnn");
 
-Tensor Model::linear(const Tensor& _input, int _outDim, ActiMode _activation)
+Tensor Model::linear(const Tensor& _input, int _outDim,
+                     ActiMode _activation,
+                     Initializer* initializer)
 {
-  GnnOp* op = new Linear(*this, _input, _outDim, _activation);
+  GnnOp* op = new Linear(*this, _input, _outDim, _activation,
+                         initializer);
   layers.push_back(op);
+  parameters.push_back(op->weight);
   return op->outputs[0];
 }
 
 Linear::Linear(const Model& model,
                const Tensor& _input,
                int outDim,
-               ActiMode _activation)
+               ActiMode _activation,
+               Initializer* initializer)
 : GnnOp(_input), activation(_activation)
 {
-  Context ctx = model.ctx;
-  Runtime* runtime = model.runtime;
   assert(_input.numDim == 2);
   assert(_input.dims[1] == model.myGraph.numNodes);
+  weight = model.create_weight_tensor(_input.dims[0], outDim, initializer);
+#ifdef DEADCODE
   // initialize weight tensor
   weight.type = Tensor::WEIGHT_TENSOR;
   weight.numDim = 1;
@@ -56,6 +61,7 @@ Linear::Linear(const Model& model,
     weight.part_grad =
         runtime->get_logical_partition(ctx, weight.region_grad, weightGradIP);
   }
+#endif
   // output
   numOutputs = 1;
   switch (_input.type) {

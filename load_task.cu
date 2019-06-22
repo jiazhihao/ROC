@@ -173,6 +173,10 @@ ResourceManager* init_task_impl(const Task *task,
   //printf("After ncclCommInitRank\n");
   // init cublas
   checkCUDA(cublasCreate(&(manager->blas)));
+  checkCUDNN(cudnnCreate(&(manager->dnn)));
+  // init dropout states
+  checkCUDNN(cudnnDropoutGetStatesSize(manager->dnn, &(manager->dropoutSize)));
+  checkCUDA(cudaMalloc(&(manager->dropoutStates, manager->dropoutSize)));
   //manager->numNodes = graph->numNodes;
   //manager->numEdges = graph->numEdges;
   //manager->numParts = graph->numParts;

@@ -29,15 +29,15 @@ ALT_MAPPERS     ?= 0		# Include alternative mappers (not recommended)
 # Put the binary file name here
 OUTFILE		?= gnn
 # List all the application source files here
-GEN_SRC		?= gnn.cc gnn_mapper.cc scattergather.cc graphnorm.cc linear.cc resourcemanager.cc	# .cc files
-GEN_GPU_SRC	?= load_task.cu nccl_task.cu scattergather_kernel.cu graphnorm_kernel.cu linear_kernel.cu	# .cu files
+GEN_SRC		?= gnn.cc gnn_mapper.cc scattergather.cc graphnorm.cc linear.cc resourcemanager.cc optimizer.cc	initializer.cc types.cc		# .cc files
+GEN_GPU_SRC	?= cuda_helper.cu load_task.cu nccl_task.cu scattergather_kernel.cu graphnorm_kernel.cu linear_kernel.cu optimizer_kernel.cu initializer_kernel.cu	# .cu files
 
 # You can modify these variables, some will be appended to by the runtime makefile
 INC_FLAGS	?= -Inccl/build/include -Icub
 CC_FLAGS	?=
 NVCC_FLAGS	?=
 GASNET_FLAGS	?=
-LD_FLAGS	?= -lcuda -lcudart -lcublas -lnccl -Lnccl/build/lib
+LD_FLAGS	?= -lcuda -lcudart -lcublas -lcurand -lnccl -Lnccl/build/lib
 # For Point and Rect typedefs
 CC_FLAGS	+= -std=c++11
 NVCC_FLAGS	+= -std=c++11

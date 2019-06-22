@@ -48,6 +48,7 @@ void top_level_task(const Task *task,
   for (int i = 0; i < 2; i++) {
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
+    t = model.linear(t, 64, AC_MODE_RELU);
   }
   model.init(config);
   for (int i = 0; i < 1; i++) {
@@ -191,6 +192,32 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<Linear::update_task>(
         registrar, "Linear Update Task");
   }
+  // Optimizer
+  {
+    TaskVariantRegistrar registrar(ADAM_UPD_TASK_ID,
+                                   "Adam Update");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<AdamOptimizer::update_task>(
+        registrar, "Adam Update Task");
+  }
+  // Initializer
+  {
+    TaskVariantRegistrar registrar(GLOROT_INIT_TASK_ID,
+                                   "Glorot Init");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<GlorotUniform::init_task>(
+        registrar, "Glorot Init Task");
+  }
+  {
+    TaskVariantRegistrar registrar(ZEROS_INIT_TASK_ID,
+                                   "Zeros Init");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<ZerosInitializer::init_task>(
+        registrar, "Zeros Init Task");
+  }
 
   Runtime::add_registration_callback(update_mappers);
 
@@ -324,6 +351,39 @@ Tensor Model::create_edge_tensor(int numHidden) const
     t.part_grad = runtime->get_logical_partition(ctx, t.region_grad, output_ip);
   }
   return t;
+}
+
+Tensor Model::create_weight_tensor(int _inDim, int _outDim,
+                                   Initializer* initializer) const
+{
+  Tensor w;
+  w.numDim = 2;
+  w.dims[0] = _inDim;
+  w.dims[1] = _outDim;
+  Rect<2> rectW(Point<2>(0, 0), Point<2>(_inDim-1, _outDim-1));
+  Rect<2> rectWGrad(Point<2>(0, 0),
+                    Point<2>(_inDim-1, _outDim * myGraph.numParts-1));
+  IndexSpaceT<2> w_is = runtime->create_index_space(ctx, rectW);
+  IndexSpaceT<2> w_grad_is = runtime->create_index_space(ctx, rectWGrad);
+  runtime->attach_name(w_is, "weight_index_space");
+  runtime->attach_name(w_grad_is, "weight_grad_index_space");
+  {
+    FieldSpace fs = runtime->create_field_space(ctx);
+    FieldAllocator allocator = runtime->create_field_allocator(ctx, fs);
+    allocator.allocate_field(sizeof(DATATYPE), FID_DATA);
+    w.region = runtime->create_logical_region(ctx, w_is, fs);
+    w.region_grad = runtime->create_logical_region(ctx, w_grad_is, fs);
+    w.part = LogicalPartition::NO_PART;
+    IndexPartition w_grad_ip = runtime->create_equal_partition(ctx, w_grad_is, taskIS);
+    w.part_grad = runtime->get_logical_partition(ctx, w.region_grad, w_grad_ip);
+  }
+  if (initializer == NULL) {
+    // Use default Glorot initializer
+    initializer = new GlorotUniform();
+    initializer->init(this, &w);
+  } else {
+  }
+  return w;
 }
 
 bool Model::init(const Config& config)

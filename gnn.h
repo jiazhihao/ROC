@@ -18,18 +18,13 @@
 
 #include "nccl_helper.h"
 #include "legion.h"
+#include "types.h"
+#include "optimizer.h"
+#include "initializer.h"
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
 using namespace Legion;
-
-template<typename FT, int N, typename T = coord_t> using AccessorRO = FieldAccessor<READ_ONLY,FT,N,T,Realm::AffineAccessor<FT,N,T> >;
-template<typename FT, int N, typename T = coord_t> using AccessorRW = FieldAccessor<READ_WRITE,FT,N,T,Realm::AffineAccessor<FT,N,T> >;
-template<typename FT, int N, typename T = coord_t> using AccessorWO = FieldAccessor<WRITE_ONLY,FT,N,T,Realm::AffineAccessor<FT,N,T> >;
-
-typedef uint32_t V_ID;
-typedef uint64_t E_ID;
-typedef float DATATYPE;
 
 #define MAX_FILE_LEN 64
 #define MAX_NUM_PARTS 64
@@ -41,14 +36,6 @@ typedef float DATATYPE;
 #define FILE_HEADER_SIZE (sizeof(E_ID) + sizeof(V_ID))
 #define MAP_TO_FB_MEMORY 0xABCD0000
 #define MAP_TO_ZC_MEMORY 0xABCE0000
-
-struct NodeStruct {
-  E_ID index;
-};
-
-struct EdgeStruct {
-  V_ID src, dst;
-};
 
 enum {
   TOP_LEVEL_TASK_ID,
@@ -64,10 +51,11 @@ enum {
   LINEAR_FWD_TASK_ID,
   LINEAR_BWD_TASK_ID,
   LINEAR_UPD_TASK_ID,
-};
-
-enum FieldIDs {
-  FID_DATA,
+  // Optimizer
+  ADAM_UPD_TASK_ID,
+  // Initializer
+  GLOROT_INIT_TASK_ID,
+  ZEROS_INIT_TASK_ID,
 };
 
 enum AggrType {
@@ -119,8 +107,12 @@ public:
     DATATYPE* ptr;
   };
   unsigned long long proc_id;
+  cudnnHandle_t dnn;
   cublasHandle_t blas;
   ncclComm_t nccl;
+  // Dropout state
+  void *dropoutStates;
+  size_t dropoutSize;
   //V_ID numNodes;
   //E_ID numEdges;
   //int numParts;
@@ -134,7 +126,7 @@ struct Tensor
     NODE_TENSOR = 1,
     EDGE_TENSOR = 2,
     GRAPH_TENSOR = 3,
-    WEIGHT_TENSOR = 8,
+    WEIGHT_TENSOR = 4,
     INVALID_TENSOR = 9,
   };
   Tensor(void): type(INVALID_TENSOR) {
@@ -156,111 +148,6 @@ struct Tensor
   LogicalPartition part, part_grad;
 };
 
-template<typename DT, int dim>
-struct TensorAccessorRO {
-  TensorAccessorRO(PhysicalRegion region,
-                   RegionRequirement req,
-                   FieldID fid,
-                   Context ctx,
-                   Runtime* runtime,
-                   ResourceManager* manager)
-  : acc(region, fid)
-  {
-    rect = runtime->get_index_space_domain(
-        ctx, req.region.get_index_space());
-    assert(acc.accessor.is_dense_arbitrary(rect));
-    ptr = acc.ptr(rect);
-    std::set<Memory> memories;
-    region.get_memories(memories);
-    assert(memories.size() == 1);
-    memory = *memories.begin();
-    if (memory.kind() == Memory::GPU_FB_MEM) {
-      fbCache = NULL;
-    } else if (memory.kind() == Memory::Z_COPY_MEM) {
-      int id = manager->assign(region, rect.volume());
-      assert(id >= 0);
-      fbCache = (DT*) manager->fbCache[id].ptr;
-    } else {
-      assert(false);
-    }
-  }
-  const AccessorRO<DT, dim> acc;
-  Rect<dim> rect;
-  Memory memory;
-  const DT *ptr;
-  DT *fbCache;
-};
-
-template<typename DT, int dim>
-struct TensorAccessorRW {
-  TensorAccessorRW(PhysicalRegion region,
-                   RegionRequirement req,
-                   FieldID fid,
-                   Context ctx,
-                   Runtime* runtime,
-                   ResourceManager* manager)
-  : acc(region, fid)
-  {
-    rect = runtime->get_index_space_domain(
-        ctx, req.region.get_index_space());
-    assert(acc.accessor.is_dense_arbitrary(rect));
-    ptr = acc.ptr(rect);
-    std::set<Memory> memories;
-    region.get_memories(memories);
-    assert(memories.size() == 1);
-    memory = *memories.begin();
-    if (memory.kind() == Memory::GPU_FB_MEM) {
-      fbCache = NULL;
-    } else if (memory.kind() == Memory::Z_COPY_MEM) {
-      int id = manager->assign(region, rect.volume());
-      assert(id >= 0);
-      fbCache = (DT*) manager->fbCache[id].ptr;
-    } else {
-      assert(false);
-    }
-  }
-  const AccessorRW<DT, dim> acc;
-  Rect<dim> rect;
-  Memory memory;
-  DT *ptr;
-  DT *fbCache;
-};
-
-template<typename DT, int dim>
-struct TensorAccessorWO {
-  TensorAccessorWO(PhysicalRegion region,
-                   RegionRequirement req,
-                   FieldID fid,
-                   Context ctx,
-                   Runtime* runtime,
-                   ResourceManager* manager)
-  : acc(region, fid)
-  {
-    rect = runtime->get_index_space_domain(
-        ctx, req.region.get_index_space());
-    assert(acc.accessor.is_dense_arbitrary(rect));
-    ptr = acc.ptr(rect);
-    std::set<Memory> memories;
-    region.get_memories(memories);
-    assert(memories.size() == 1);
-    memory = *memories.begin();
-    if (memory.kind() == Memory::GPU_FB_MEM) {
-      fbCache = NULL;
-    } else if (memory.kind() == Memory::Z_COPY_MEM) {
-      int id = manager->assign(region, rect.volume());
-      assert(id >= 0);
-      fbCache = (DT*) manager->fbCache[id].ptr;
-    } else {
-      assert(false);
-    }
-  }
-  const AccessorWO<DT, dim> acc;
-  Rect<dim> rect;
-  Memory memory;
-  DT *ptr;
-  DT *fbCache;
-};
-
 class GnnOp;
 
 class Model
@@ -269,9 +156,12 @@ public:
   Model(const Graph& _graph, Context _ctx, Runtime* _runtime, int _numHidden);
   Tensor scatter_gather(const Tensor& _input);
   Tensor indegree_norm(const Tensor& _input);
-  Tensor linear(const Tensor& _input, int outDim, ActiMode activation);
+  Tensor linear(const Tensor& _input, int outDim,
+                ActiMode activation, Initializer* initializer = NULL);
   Tensor create_node_tensor(int _numHidden) const;
   Tensor create_edge_tensor(int _numHidden) const;
+  Tensor create_weight_tensor(int _inDim, int _outDim,
+                              Initializer* initializer) const;
   bool init(const Config& config);
   void forward(void);
   Tensor get_input_tensor(void) const;
@@ -280,6 +170,8 @@ public:
   Runtime* runtime;
   IndexSpaceT<1> taskIS;
   ArgumentMap taskArgs;
+  Optimizer* optimizer;
+  std::vector<Tensor> parameters;
 private:
   Tensor input;
   //int numParts;
@@ -343,7 +235,8 @@ class Linear : public GnnOp
 {
 public:
   Linear(const Model& model, const Tensor& input,
-         int outDim, ActiMode _activaiton);
+         int outDim, ActiMode _activaiton,
+         Initializer* initializer);
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
@@ -360,6 +253,25 @@ public:
 public:
   ActiMode activation;
   Tensor weight;
+};
+
+class Dropout : public GnnOp
+{
+public:
+  Dropout(const Model& model, const Tensor& input);
+  virtual void init(const Model& model);
+  virtual void forward(const Model& model);
+  virtual void backward(const Model& model);
+  virtual void update(const Model& model);
+  static void forward_task(const Task *task,
+                           const std::vector<PhysicalRegion> &regions,
+                           Context ctx, Runtime *runtime);
+  static void backward_task(const Task *task,
+                            const std::vector<PhysicalRegion> &regions,
+                            Context ctx, Runtime *runtime);
+  static void update_task(const Task *task,
+                          const std::vector<PhysicalRegion> &regions,
+                          Context ctx, Runtime *runtime);
 };
 
 class NcclTask : public IndexLauncher

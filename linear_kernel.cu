@@ -27,7 +27,7 @@ void Linear::forward_task(const Task *task,
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 1> accWeight(
+  TensorAccessorRO<DATATYPE, 2> accWeight(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
   TensorAccessorRO<DATATYPE, 2> accInput(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
@@ -56,6 +56,13 @@ void Linear::forward_task(const Task *task,
   assert(rectInput.lo[1] == rectOutput.lo[1]);
   assert(rectInput.hi[1] == rectOutput.hi[1]);
 #endif
+  // Weight matches outDim
+  assert(accWeight.rect.hi[1] == accOutput.rect.hi[0]);
+  assert(accWeight.rect.lo[1] == accOutput.rect.lo[0]);
+  // Weight matches inDim
+  assert(accWeight.rect.hi[0] == accInput.rect.hi[0]);
+  assert(accWeight.rect.lo[0] == accInput.rect.lo[0]);
+  // input matches output
   assert(accInput.rect.lo[1] == accOutput.rect.lo[1]);
   assert(accInput.rect.hi[1] == accOutput.rect.hi[1]);
   V_ID rowLeft = accInput.rect.lo[1], rowRight = accInput.rect.hi[1];
