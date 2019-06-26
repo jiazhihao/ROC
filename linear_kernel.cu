@@ -68,6 +68,21 @@ void Linear::forward_task(const Task *task,
   V_ID rowLeft = accInput.rect.lo[1], rowRight = accInput.rect.hi[1];
   int inDim = accInput.rect.hi[0] - accInput.rect.lo[0] + 1;
   int outDim = accOutput.rect.hi[0] - accOutput.rect.lo[0] + 1;
+  // Test
+  cudnnDropoutDescriptor_t dropoutDesc;
+  cudnnTensorDescriptor_t inputDesc, ouputDesc;
+  cudnnCreateDropoutDescriptor(&dropoutDesc);
+  cudnnCreateTensorDescriptor(&inputDesc);
+  double ts_start = Realm::Clock::current_time_in_microseconds();
+  checkCUDNN(cudnnSetDropoutDescriptor(dropoutDesc, manager->dnn, 0.5, manager->dropoutStates, manager->dropoutSize, 10));
+  double ts_end = Realm::Clock::current_time_in_microseconds();
+  int dims[] = {rowRight - rowLeft + 1, inDim, 1};
+  int strides[] = {dims[1] * dims[2], dims[2], 1};
+  checkCUDNN(cudnnSetTensorNdDescriptor(inputDesc, CUDNN_DATA_FLOAT, 3, dims, strides));
+  size_t size;
+  checkCUDNN(cudnnDropoutGetReserveSpaceSize(inputDesc, &size));
+  printf("dims = (%d %d %d) size = %zu time = %.4lfus\n", dims[0], dims[1], dims[2], size, ts_end - ts_start);
+  // Test
 }
 
 __host__

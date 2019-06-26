@@ -17,17 +17,18 @@
 
 LegionRuntime::Logger::Category log_dropout("dropout");
 
-Tensor Model::dropout(const Tensor& _input, int _seed)
+Tensor Model::dropout(const Tensor& _input, float _rate, int _seed)
 {
-  GnnOp* op = new Dropout(*this, _input, _seed);
+  GnnOp* op = new Dropout(*this, _input, _rate, _seed);
   layers.push_back(op);
   return op->outputs[0];
 }
 
 Dropout::Dropout(const Model& _model,
                  const Tensor& _input,
+                 float _rate,
                  int _seed)
-: GnnOp(_input), seed(_seed)
+: GnnOp(_input), rate(_rate), seed(_seed)
 {
   assert(_input.numDim == 2);
   // output
@@ -35,12 +36,12 @@ Dropout::Dropout(const Model& _model,
   switch (_input.type) {
     case Tensor::NODE_TENSOR:
     {
-      outputs[0] = model.creaet_node_tensor(_input.dims[0]);
+      outputs[0] = _model.create_node_tensor<DATATYPE>(_input.dims[0]);
       break;
     }
     case Tensor::EDGE_TENSOR:
     {
-      outputs[0] = model.creaet_edge_tensor(_input.dims[0]);
+      outputs[0] = _model.create_edge_tensor<DATATYPE>(_input.dims[0]);
       break;
     }
     default:
@@ -51,7 +52,18 @@ Dropout::Dropout(const Model& _model,
 }
 
 void Dropout::init(const Model& model)
-{}
+{
+  Context ctx = model.ctx;
+  Runtime* runtime = model.runtime;
+  IndexLauncher launcher(DROPOUT_INIT_TASK_ID, model.taskIS,
+                         TaskArgument(this, sizeof(Dropout)), model.taskArgs);
+  // regions[0]: input
+  launcher.add_region_requirement(
+      RegionRequirement(inputs[0].part, 0/*projection*/,
+                        READ_ONLY, EXCLUSIVE, inputs[0].region,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(0, FID_DATA);
+}
 
 void Dropout::forward(const Model& model)
 {
@@ -77,4 +89,23 @@ void Dropout::forward(const Model& model)
 void Dropout::backward(const Model& model)
 {
   Context ctx = model.ctx;
+  Runtime* runtime = model.runtime;
+  IndexLauncher launcher(DROPOUT_BWD_TASK_ID, model.taskIS,
+                         TaskArgument(this, sizeof(Dropout)), model.taskArgs);
+  // regions[0]: output_grad
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0].part_grad, 0/*projection*/,
+                        READ_ONLY, EXCLUSIVE, outputs[0].region_grad,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(0, FID_DATA);
+  // regions[0]: input_grad
+  launcher.add_region_requirement(
+      RegionRequirement(inputs[0].part_grad, 0/*projection*/,
+                        WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(1, FID_DATA);
+  runtime->execute_index_space(ctx, launcher);
 }
+
+void Dropout::update(const Model& model)
+{}

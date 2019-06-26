@@ -21,6 +21,8 @@
 #include "types.h"
 #include "optimizer.h"
 #include "initializer.h"
+#include "realm/cuda/cuda_module.h" // For Realm::Cuda::GPUFBMemory
+#include <cudnn.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
@@ -40,7 +42,10 @@ using namespace Legion;
 enum {
   TOP_LEVEL_TASK_ID,
   NCCL_TASK_ID,
-  LOAD_TASK_ID,
+  LOAD_GRAPH_TASK_ID,
+  LOAD_FEATS_TASK_ID,
+  LOAD_LABEL_TASK_ID,
+  LOAD_MASK_TASK_ID,
   INIT_TASK_ID,
   SCATTERGATHER_FWD_TASK_ID,
   SCATTERGATHER_BWD_TASK_ID,
@@ -51,6 +56,13 @@ enum {
   LINEAR_FWD_TASK_ID,
   LINEAR_BWD_TASK_ID,
   LINEAR_UPD_TASK_ID,
+  DROPOUT_INIT_TASK_ID,
+  DROPOUT_FWD_TASK_ID,
+  DROPOUT_BWD_TASK_ID,
+  DROPOUT_UPD_TASK_ID,
+  SOFTMAX_FWD_TASK_ID,
+  SOFTMAX_BWD_TASK_ID,
+  SOFTMAX_UPD_TASK_ID,
   // Optimizer
   ADAM_UPD_TASK_ID,
   // Initializer
@@ -68,6 +80,12 @@ enum AggrType {
 enum ActiMode {
   AC_MODE_NONE,
   AC_MODE_RELU,
+};
+
+enum MaskType {
+  MASK_TRAIN,
+  MASK_VAL,
+  MASK_TEST
 };
 
 struct Config
@@ -97,6 +115,10 @@ struct Graph
 class ResourceManager
 {
 public:
+  struct ReservedSpace {
+    void* ptr;
+    size_t size;
+  };
   ResourceManager(void);
   ~ResourceManager(void);
   void reset(void);
@@ -113,11 +135,14 @@ public:
   // Dropout state
   void *dropoutStates;
   size_t dropoutSize;
+  Realm::Cuda::GPUFBMemory* allocator;
   //V_ID numNodes;
   //E_ID numEdges;
   //int numParts;
   CacheSlot fbCache[MAX_NUM_CACHES];
   std::set<int> assigned;
+  std::map<LogicalRegion, ReservedSpace> reservedSpace;
+  std::map<LogicalRegion, cudnnDropoutDescriptor_t> dropoutDesc;
 };
 
 struct Tensor
@@ -153,18 +178,24 @@ class GnnOp;
 class Model
 {
 public:
-  Model(const Graph& _graph, Context _ctx, Runtime* _runtime, int _numHidden);
+  Model(const Graph& _graph, Context _ctx, Runtime* _runtime);
+  Tensor dropout(const Tensor& _input, float rate, int seed = 0);
   Tensor scatter_gather(const Tensor& _input);
+  void softmax_cross_entropy(const Tensor& logits, const Tensor& labels, const Tensor& mask);
   Tensor indegree_norm(const Tensor& _input);
   Tensor linear(const Tensor& _input, int outDim,
                 ActiMode activation, Initializer* initializer = NULL);
+  template<typename DT>
   Tensor create_node_tensor(int _numHidden) const;
+  template<typename DT>
   Tensor create_edge_tensor(int _numHidden) const;
   Tensor create_weight_tensor(int _inDim, int _outDim,
                               Initializer* initializer) const;
+  void load_features(const Tensor& input, const std::string& filename);
+  void load_labels(const Tensor& label, const std::string& filename);
+  void load_train_mask(const Tensor& mask, const std::string& filename);
   bool init(const Config& config);
   void forward(void);
-  Tensor get_input_tensor(void) const;
   Graph myGraph;
   Context ctx;
   Runtime* runtime;
@@ -173,7 +204,6 @@ public:
   Optimizer* optimizer;
   std::vector<Tensor> parameters;
 private:
-  Tensor input;
   //int numParts;
   std::vector<GnnOp*> layers;
 };
@@ -182,6 +212,7 @@ class GnnOp
 {
 public:
   GnnOp(const Tensor& input);
+  GnnOp(const Tensor& input1, const Tensor& input2, const Tensor& input3);
   virtual void init(const Model& model) = 0;
   virtual void forward(const Model& model) = 0;
   virtual void backward(const Model& model) = 0;
@@ -258,11 +289,14 @@ public:
 class Dropout : public GnnOp
 {
 public:
-  Dropout(const Model& model, const Tensor& input);
+  Dropout(const Model& model, const Tensor& input, float rate, int seed);
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
   virtual void update(const Model& model);
+  static void init_task(const Task *task,
+                        const std::vector<PhysicalRegion> &regions,
+                        Context ctx, Runtime *runtime);
   static void forward_task(const Task *task,
                            const std::vector<PhysicalRegion> &regions,
                            Context ctx, Runtime *runtime);
@@ -272,6 +306,25 @@ public:
   static void update_task(const Task *task,
                           const std::vector<PhysicalRegion> &regions,
                           Context ctx, Runtime *runtime);
+public:
+  float rate;
+  int seed;
+};
+
+class SoftmaxCrossEntropy : public GnnOp
+{
+public:
+  SoftmaxCrossEntropy(const Model& model,
+                      const Tensor& logits,
+                      const Tensor& labels,
+                      const Tensor& mask);
+  virtual void init(const Model& model);
+  virtual void forward(const Model& model);
+  virtual void backward(const Model& model);
+  virtual void update(const Model& model);
+  static void backward_task(const Task *task,
+                            const std::vector<PhysicalRegion> &regions,
+                            Context ctx, Runtime *runtime);
 };
 
 class NcclTask : public IndexLauncher
@@ -282,22 +335,41 @@ public:
            const ArgumentMap& arg_map);
 };
 
-class LoadTask : public IndexLauncher
+class LoadFeaturesTask : public TaskLauncher
 {
 public:
-  LoadTask(const Graph& graph,
-           const IndexSpaceT<1>& domain,
-           const ArgumentMap& arg_map,
-           const std::string& fn);
+  LoadFeaturesTask(const Model& model,
+                   const Tensor& input,
+                   const std::string& filename);
+};
+
+class LoadLabelsTask : public TaskLauncher
+{
+public:
+  LoadLabelsTask(const Model& model,
+                 const Tensor& input,
+                 const std::string& filename);
+};
+
+class LoadMaskTask : public TaskLauncher
+{
+public:
+  LoadMaskTask(const Model& model,
+               const Tensor& input,
+               const std::string& filename);
+};
+
+class LoadGraphTask : public IndexLauncher
+{
+public:
+  LoadGraphTask(const Model& model,
+                const std::string& filename);
 };
 
 class InitTask : public IndexLauncher
 {
 public:
-  InitTask(const Graph& graph,
-           const Tensor& input,
-           const IndexSpaceT<1>& domain,
-           const ArgumentMap& arg_map);
+  InitTask(const Model& model);
 };
 
 template<typename T>
@@ -314,6 +386,18 @@ NcclInfo nccl_task_impl(const Task *task,
 void load_graph_impl(const Task *task,
                      const std::vector<PhysicalRegion> &regions,
                      Context ctx, Runtime *runtime);
+
+void load_features_impl(const Task *task,
+                        const std::vector<PhysicalRegion> &regions,
+                        Context ctx, Runtime *runtime);
+
+void load_labels_impl(const Task *task,
+                     const std::vector<PhysicalRegion> &regions,
+                     Context ctx, Runtime *runtime);
+
+void load_mask_impl(const Task *task,
+                    const std::vector<PhysicalRegion> &regions,
+                    Context ctx, Runtime *runtime);
 
 void gnn_fwd_task_impl(const Task *task,
                        const std::vector<PhysicalRegion> &regions,

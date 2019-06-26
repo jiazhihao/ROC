@@ -90,7 +90,10 @@ void GnnMapper::slice_task(const MapperContext ctx,
                            const SliceTaskInput& input,
                            SliceTaskOutput& output)
 {
-  if (task.task_id == LOAD_TASK_ID
+  if (task.task_id == LOAD_GRAPH_TASK_ID
+  ||  task.task_id == LOAD_FEATS_TASK_ID
+  ||  task.task_id == LOAD_LABEL_TASK_ID
+  ||  task.task_id == LOAD_MASK_TASK_ID
   ||  task.task_id == TOP_LEVEL_TASK_ID) {
     if (cpuSlices.size() > 0) {
       output.slices = cpuSlices;

@@ -1,5 +1,6 @@
 #include "types.h"
 #include "gnn.h"
+#include "cuda_helper.h"
 
 template<typename DT, int dim>
 TensorAccessorRO<DT, dim>::TensorAccessorRO(PhysicalRegion region,
@@ -24,6 +25,8 @@ TensorAccessorRO<DT, dim>::TensorAccessorRO(PhysicalRegion region,
     int id = manager->assign(region, rect.volume());
     assert(id >= 0);
     fbCache = (DT*) manager->fbCache[id].ptr;
+    checkCUDA(cudaMemcpy(fbCache, ptr, rect.volume() * sizeof(DT),
+        cudaMemcpyHostToDevice));
   } else {
     assert(false);
   }
@@ -52,6 +55,8 @@ TensorAccessorRW<DT, dim>::TensorAccessorRW(PhysicalRegion region,
     int id = manager->assign(region, rect.volume());
     assert(id >= 0);
     fbCache = (DT*) manager->fbCache[id].ptr;
+    checkCUDA(cudaMemcpy(fbCache, ptr, rect.volume() * sizeof(DT),
+        cudaMemcpyHostToDevice));
   } else {
     assert(false);
   }
@@ -90,6 +95,7 @@ template class TensorAccessorRO<EdgeStruct, 1>;
 template class TensorAccessorRO<DATATYPE, 1>;
 template class TensorAccessorRO<DATATYPE, 2>;
 template class TensorAccessorRO<DATATYPE, 3>;
+template class TensorAccessorRO<int, 1>;
 
 template class TensorAccessorRW<DATATYPE, 1>;
 template class TensorAccessorRW<DATATYPE, 2>;

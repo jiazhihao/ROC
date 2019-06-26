@@ -21,7 +21,7 @@ Tensor Model::linear(const Tensor& _input, int _outDim,
                      ActiMode _activation,
                      Initializer* initializer)
 {
-  GnnOp* op = new Linear(*this, _input, _outDim, _activation,
+  Linear* op = new Linear(*this, _input, _outDim, _activation,
                          initializer);
   layers.push_back(op);
   parameters.push_back(op->weight);
@@ -67,12 +67,12 @@ Linear::Linear(const Model& model,
   switch (_input.type) {
     case Tensor::NODE_TENSOR:
     {
-      outputs[0] = model.create_node_tensor(outDim);
+      outputs[0] = model.create_node_tensor<DATATYPE>(outDim);
       break;
     }
     case Tensor::EDGE_TENSOR:
     {
-      outputs[0] = model.create_edge_tensor(outDim);
+      outputs[0] = model.create_edge_tensor<DATATYPE>(outDim);
       break;
     }
     default:

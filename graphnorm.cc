@@ -33,7 +33,7 @@ InDegreeNorm::InDegreeNorm(const Model& model,
   assert(_input.numDim == 2);
   assert(_input.dims[1] == model.myGraph.numNodes);
   numOutputs = 1;
-  outputs[0] = model.create_node_tensor(_input.dims[0]);
+  outputs[0] = model.create_node_tensor<DATATYPE>(_input.dims[0]);
 }
 
 void InDegreeNorm::init(const Model& model)

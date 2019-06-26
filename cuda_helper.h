@@ -1,6 +1,7 @@
 #ifndef _GNN_CUDA_HELPER_H_
 #define _GNN_CUDA_HELPER_H_
 #include "legion.h"
+#include <cudnn.h>
 
 #define FatalError(s) do {                                             \
     std::stringstream _where, _message;                                \
@@ -8,6 +9,14 @@
     _message << std::string(s) + "\n" << __FILE__ << ':' << __LINE__;  \
     std::cerr << _message.str() << "\nAborting...\n";                  \
     exit(1);                                                           \
+} while(0)
+
+#define checkCUDNN(status) do {                                        \
+    std::stringstream _error;                                          \
+    if (status != CUDNN_STATUS_SUCCESS) {                              \
+      _error << "CUDNN failure: " << cudnnGetErrorString(status);      \
+      FatalError(_error.str());                                        \
+    }                                                                  \
 } while(0)
 
 #define checkCUDA(status) do {                                         \

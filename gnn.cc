@@ -43,15 +43,22 @@ void top_level_task(const Task *task,
   }
   Graph graph(ctx, runtime, config);
   // Model Construction
-  Model model(graph, ctx, runtime, 64);
-  Tensor t = model.get_input_tensor();
+  Model model(graph, ctx, runtime);
+  Tensor input = model.create_node_tensor<DATATYPE>(602);
+  Tensor label = model.create_node_tensor<DATATYPE>(64);
+  Tensor mask = model.create_node_tensor<int>(1);
+  model.load_features(input, config.filename);
+  model.load_labels(label, config.filename);
+  model.load_train_mask(mask, config.filename);
+  Tensor t = input;
   for (int i = 0; i < 2; i++) {
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
     t = model.linear(t, 64, AC_MODE_RELU);
   }
+  model.softmax_cross_entropy(t, label, mask);
   model.init(config);
-  for (int i = 0; i < 1; i++) {
+  for (int i = 0; i < 10; i++) {
     model.forward();
   }
 }
@@ -104,11 +111,32 @@ int main(int argc, char **argv)
         registrar,  "nccl_task");
   }
   {
-    TaskVariantRegistrar registrar(LOAD_TASK_ID, "load_graph");
+    TaskVariantRegistrar registrar(LOAD_GRAPH_TASK_ID, "load_graph");
     registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
     registrar.set_leaf();
     Runtime::preregister_task_variant<load_graph_impl>(
         registrar, "load_graph");
+  }
+  {
+    TaskVariantRegistrar registrar(LOAD_FEATS_TASK_ID, "load_features");
+    registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<load_features_impl>(
+        registrar, "load_features");
+  }
+  {
+    TaskVariantRegistrar registrar(LOAD_LABEL_TASK_ID, "load_labels");
+    registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<load_labels_impl>(
+        registrar, "load_labels");
+  }
+  {
+    TaskVariantRegistrar registrar(LOAD_MASK_TASK_ID, "load_mask");
+    registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<load_mask_impl>(
+        registrar, "load_mask");
   }
   {
     TaskVariantRegistrar registrar(INIT_TASK_ID, "init_task");
@@ -192,6 +220,41 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<Linear::update_task>(
         registrar, "Linear Update Task");
   }
+  // Dropout
+  {
+    TaskVariantRegistrar registrar(DROPOUT_INIT_TASK_ID,
+                                   "Dropout Init");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Dropout::init_task>(
+        registrar, "Dropout Init Task");
+  }
+  {
+    TaskVariantRegistrar registrar(DROPOUT_FWD_TASK_ID,
+                                   "Dropout Forward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Dropout::forward_task>(
+        registrar, "Dropout Forward Task");
+  }
+  {
+    TaskVariantRegistrar registrar(DROPOUT_BWD_TASK_ID,
+                                   "Dropout Backward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Linear::backward_task>(
+        registrar, "Dropout Backward Task");
+  }
+  // Softmax
+  {
+    TaskVariantRegistrar registrar(SOFTMAX_BWD_TASK_ID,
+                                   "SoftmaxCrossEntropy Backward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<SoftmaxCrossEntropy::backward_task>(
+        registrar, "SoftmaxCrossEntropy Backward Task");
+  }
+
   // Optimizer
   {
     TaskVariantRegistrar registrar(ADAM_UPD_TASK_ID,
@@ -225,22 +288,29 @@ int main(int argc, char **argv)
 }
 
 GnnOp::GnnOp(const Tensor& _input)
-: numInputs(0)
+: numInputs(1)
 {
   inputs[0] = _input;
 }
 
+GnnOp::GnnOp(const Tensor& _input1, const Tensor& _input2, const Tensor& _input3)
+: numInputs(3)
+{
+  inputs[0] = _input1;
+  inputs[1] = _input2;
+  inputs[2] = _input3;
+}
+
 Model::Model(const Graph& _graph,
              Context _ctx,
-             Runtime* _runtime,
-             int _inputDim)
+             Runtime* _runtime)
 : myGraph(_graph), ctx(_ctx), runtime(_runtime)
 {
-  input = create_node_tensor(_inputDim);
   Rect<1> task_rect(0, _graph.numParts-1);
   taskIS = runtime->create_index_space(ctx, task_rect);
 }
 
+template<typename DT>
 Tensor Model::create_node_tensor(int numHidden) const
 {
   Tensor t(Tensor::NODE_TENSOR);
@@ -261,7 +331,7 @@ Tensor Model::create_node_tensor(int numHidden) const
   {
     FieldSpace outputFS = runtime->create_field_space(ctx);
     FieldAllocator allocator = runtime->create_field_allocator(ctx, outputFS);
-    allocator.allocate_field(sizeof(DATATYPE), FID_DATA);
+    allocator.allocate_field(sizeof(DT), FID_DATA);
     t.region = runtime->create_logical_region(ctx, outputIS, outputFS);
     t.region_grad = runtime->create_logical_region(ctx, outputIS, outputFS);
   }
@@ -297,6 +367,7 @@ Tensor Model::create_node_tensor(int numHidden) const
   return t;
 }
 
+template<typename DT>
 Tensor Model::create_edge_tensor(int numHidden) const
 {
   Tensor t(Tensor::EDGE_TENSOR);
@@ -317,7 +388,7 @@ Tensor Model::create_edge_tensor(int numHidden) const
   {
     FieldSpace outputFS = runtime->create_field_space(ctx);
     FieldAllocator allocator = runtime->create_field_allocator(ctx, outputFS);
-    allocator.allocate_field(sizeof(DATATYPE), FID_DATA);
+    allocator.allocate_field(sizeof(DT), FID_DATA);
     t.region = runtime->create_logical_region(ctx, outputIS, outputFS);
     t.region_grad = runtime->create_logical_region(ctx, outputIS, outputFS);
   }
@@ -405,17 +476,23 @@ bool Model::init(const Config& config)
   }
 #endif
   // Load graphs
-  myGraph.maxHidden = input.dims[0];
-  for (size_t i = 0; i < layers.size(); i++)
+  myGraph.maxHidden = 0;
+  for (size_t i = 0; i < layers.size(); i++) {
     for (int j = 0; j < layers[i]->numOutputs; j++) {
       assert(layers[i]->outputs[j].numDim == 2);
       myGraph.maxHidden = std::max(myGraph.maxHidden,
                                    (int)layers[i]->outputs[j].dims[0]);
     }
-  LoadTask load_task(myGraph, taskIS, local_args, config.filename);
+    for (int j = 0; j < layers[i]->numInputs; j++) {
+      if (layers[i]->inputs[j].numDim == 2)
+        myGraph.maxHidden = std::max(myGraph.maxHidden,
+                                     (int)layers[i]->inputs[j].dims[0]);
+    }
+  }
+  LoadGraphTask load_task(*this, config.filename);
   fm = runtime->execute_index_space(ctx, load_task);
   fm.wait_all_results();
-  InitTask init_task(myGraph, get_input_tensor(), taskIS, local_args);
+  InitTask init_task(*this);
   fm = runtime->execute_index_space(ctx, init_task);
   fm.wait_all_results();
   Rect<1> task_rect = runtime->get_index_space_domain(ctx, taskIS);
@@ -427,15 +504,31 @@ bool Model::init(const Config& config)
   return true;
 }
 
+void Model::load_features(const Tensor& input, const std::string& filename)
+{
+  LoadFeaturesTask load_feats_task(*this, input, filename);
+  Future f = runtime->execute_task(ctx, load_feats_task); 
+  f.get_void_result();
+}
+
+void Model::load_labels(const Tensor& label, const std::string& filename)
+{
+  LoadLabelsTask load_labels_task(*this, label, filename);
+  Future f = runtime->execute_task(ctx, load_labels_task);
+  f.get_void_result();
+}
+
+void Model::load_train_mask(const Tensor& mask, const std::string& filename)
+{
+  LoadMaskTask load_mask_task(*this, mask, filename);
+  Future f = runtime->execute_task(ctx, load_mask_task);
+  f.get_void_result();
+}
+
 void Model::forward(void)
 {
   for (size_t l = 0; l < layers.size(); l++)
     layers[l]->forward(*this);
-}
-
-Tensor Model::get_input_tensor(void) const
-{
-  return input;
 }
 
 Graph::Graph(Context ctx,
@@ -443,7 +536,9 @@ Graph::Graph(Context ctx,
              const Config& config)
 : numParts(config.totalGPUs), numMachines(config.numMachines)
 {
-  FILE* fd = fopen(config.filename.c_str(), "rb");
+  std::string luxfilename = config.filename + ".add_self_edge.lux";
+  printf("Lux Filename: %s\n", luxfilename.c_str());
+  FILE* fd = fopen(luxfilename.c_str(), "rb");
   assert(fd != NULL);
   size_t fread_ret = fread(&numNodes, sizeof(V_ID), 1, fd);
   assert(fread_ret == 1);
@@ -558,3 +653,5 @@ Graph::Graph(Context ctx,
   }
   free(raw_rows);
 }
+
+template Tensor Model::create_edge_tensor<DATATYPE>(int) const;
