@@ -75,10 +75,35 @@ void InDegreeNorm::forward(const Model& model)
 
 void InDegreeNorm::backward(const Model& model)
 {
-  // TODO
-  assert(false);
+  Context ctx = model.ctx;
+  Runtime* runtime = model.runtime;
+  //Rect<1> taskRect = runtime->get_index_space_domain(ctx, model.taskIS);
+  IndexLauncher launcher(INDEGREENORM_BWD_TASK_ID, model.taskIS,
+                         TaskArgument(this, sizeof(InDegreeNorm)), model.taskArgs);
+  // regions[0]: in_row_ptrs
+  launcher.add_region_requirement(
+      RegionRequirement(model.myGraph.rowPtrLP, 0/*projection*/,
+                       READ_ONLY, EXCLUSIVE, model.myGraph.rowPtrLR,
+                       MAP_TO_FB_MEMORY));
+  launcher.add_field(0, FID_DATA);
+  // regions[1]: in_col_idxs
+  launcher.add_region_requirement(
+      RegionRequirement(model.myGraph.colIdxLP, 0/*projection*/,
+                        READ_ONLY, EXCLUSIVE, model.myGraph.colIdxLR,
+                        MAP_TO_FB_MEMORY));
+  launcher.add_field(1, FID_DATA);
+  // regions[2]: outputGrad
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0].part_grad, 0/*projection*/,
+                        READ_ONLY, EXCLUSIVE, outputs[0].region_grad,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(2, FID_DATA);
+  // regions[3]: inputGrad
+  launcher.add_region_requirement(
+      RegionRequirement(inputs[0].part_grad, 0/*projection*/,
+                        WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(3, FID_DATA);
+  runtime->execute_index_space(ctx, launcher);
 }
 
-void InDegreeNorm::update(const Model& model)
-{
-}

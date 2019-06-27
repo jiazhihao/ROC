@@ -39,6 +39,11 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
 {
   assert(regions.size() == 3 or regions.size() == 4);
   assert(regions.size() == task->regions.size());
+  const SoftmaxCrossEntropy* op = (SoftmaxCrossEntropy*) task->args;
+  // assert the three inputs need reset gradient
+  assert(op->resetInputGrads[0]);
+  assert(op->resetInputGrads[1]);
+  assert(op->resetInputGrads[2]);
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
@@ -54,12 +59,13 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
   V_ID rowLeft = accLogits.rect.lo[1], rowRight = accLogits.rect.hi[1];
   int hiddenDim = accLogits.rect.hi[0] - accLogits.rect.lo[0] + 1;
   if (regions.size() == 4) {
-    TensorAccessorRO<int, 1> accMask(
+    TensorAccessorRO<int, 2> accMask(
         regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
     assert(accLogits.rect == accLabels.rect);
     assert(accLogits.rect == accLogitsGrad.rect);
-    assert(accMask.rect.hi[0] == rowLeft);
-    assert(accMask.rect.lo[0] == rowRight);
+    assert(accMask.rect.lo[0] == accMask.rect.hi[0]);
+    assert(accMask.rect.lo[1] == rowLeft);
+    assert(accMask.rect.hi[1] == rowRight);
     
     cudnnTensorDescriptor_t inputDesc;
     checkCUDNN(cudnnCreateTensorDescriptor(&inputDesc));

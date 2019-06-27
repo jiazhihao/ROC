@@ -139,7 +139,7 @@ void Linear::backward(const Model& model)
   // regions[3]: weight_grad
   launcher.add_region_requirement(
       RegionRequirement(weight.part_grad, 0/*projection*/,
-                        WRITE_ONLY, EXCLUSIVE, weight.region_grad,
+                        READ_WRITE, EXCLUSIVE, weight.region_grad,
                         MAP_TO_FB_MEMORY));
   launcher.add_field(3, FID_DATA);
   // regions[4]: input_grad
@@ -151,6 +151,7 @@ void Linear::backward(const Model& model)
   runtime->execute_index_space(ctx, launcher);
 }
 
+#ifdef DEADCODE
 void Linear::update(const Model& model)
 {
   Context ctx = model.ctx;
@@ -170,5 +171,4 @@ void Linear::update(const Model& model)
   launcher.add_field(1, FID_DATA);
   runtime->execute_task(ctx, launcher);
 }
-
-
+#endif

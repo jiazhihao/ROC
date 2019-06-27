@@ -81,5 +81,3 @@ void SoftmaxCrossEntropy::backward(const Model& model)
   runtime->execute_index_space(ctx, launcher);
 }
 
-void SoftmaxCrossEntropy::update(const Model& model)
-{}

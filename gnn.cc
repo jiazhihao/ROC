@@ -31,6 +31,7 @@ void top_level_task(const Task *task,
   config.numGPUs = 0;
   config.filename = "";
   config.verbose = false;
+  config.numEpochs = 1;
   {
     const InputArgs &command_args = HighLevelRuntime::get_input_args();
     char **argv = command_args.argv;
@@ -44,7 +45,7 @@ void top_level_task(const Task *task,
   Graph graph(ctx, runtime, config);
   // Model Construction
   Model model(graph, ctx, runtime);
-  Tensor input = model.create_node_tensor<DATATYPE>(602);
+  Tensor input = model.create_node_tensor<DATATYPE>(64);
   Tensor label = model.create_node_tensor<DATATYPE>(64);
   Tensor mask = model.create_node_tensor<int>(1);
   model.load_features(input, config.filename);
@@ -58,8 +59,11 @@ void top_level_task(const Task *task,
   }
   model.softmax_cross_entropy(t, label, mask);
   model.init(config);
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < config.numEpochs; i++) {
+    model.zero_gradients();
     model.forward();
+    model.backward();
+    model.update();
   }
 }
 
@@ -70,6 +74,11 @@ void parse_input_args(char **argv, int argc, Config& config)
     if ((!strcmp(argv[i], "-ng")) || (!strcmp(argv[i], "-ll:gpu"))) 
     {
       config.numGPUs = atoi(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "-e")) || (!strcmp(argv[i], "-epoch"))) 
+    {
+      config.numEpochs = atoi(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "-file"))
@@ -162,14 +171,14 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<ScatterGather::backward_task>(
         registrar, "ScatterGather Backward Task");
   }
-  {
-    TaskVariantRegistrar registrar(SCATTERGATHER_UPD_TASK_ID,
-                                   "ScatterGather Update");
-    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
-    registrar.set_leaf();
-    Runtime::preregister_task_variant<ScatterGather::update_task>(
-        registrar, "ScatterGather Update Task");
-  }
+  //{
+  //  TaskVariantRegistrar registrar(SCATTERGATHER_UPD_TASK_ID,
+  //                                 "ScatterGather Update");
+  //  registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+  //  registrar.set_leaf();
+  //  Runtime::preregister_task_variant<ScatterGather::update_task>(
+  //      registrar, "ScatterGather Update Task");
+  //}
   // InDegreeNorm
   {
     TaskVariantRegistrar registrar(INDEGREENORM_FWD_TASK_ID,
@@ -187,14 +196,14 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<InDegreeNorm::backward_task>(
         registrar, "InDegreeNorm Backward Task");
   }
-  {
-    TaskVariantRegistrar registrar(INDEGREENORM_UPD_TASK_ID,
-                                   "InDegreeNorm Update");
-    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
-    registrar.set_leaf();
-    Runtime::preregister_task_variant<InDegreeNorm::update_task>(
-        registrar, "InDegreeNorm Update Task");
-  }
+  //{
+  //  TaskVariantRegistrar registrar(INDEGREENORM_UPD_TASK_ID,
+  //                                 "InDegreeNorm Update");
+  //  registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+  //  registrar.set_leaf();
+  //  Runtime::preregister_task_variant<InDegreeNorm::update_task>(
+  //      registrar, "InDegreeNorm Update Task");
+  //}
   // Linear
   {
     TaskVariantRegistrar registrar(LINEAR_FWD_TASK_ID,
@@ -212,14 +221,14 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<Linear::backward_task>(
         registrar, "Linear Backward Task");
   }
-  {
-    TaskVariantRegistrar registrar(LINEAR_UPD_TASK_ID,
-                                   "Linear Update");
-    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
-    registrar.set_leaf();
-    Runtime::preregister_task_variant<Linear::update_task>(
-        registrar, "Linear Update Task");
-  }
+  //{
+  //  TaskVariantRegistrar registrar(LINEAR_UPD_TASK_ID,
+  //                                 "Linear Update");
+  //  registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+  //  registrar.set_leaf();
+  //  Runtime::preregister_task_variant<Linear::update_task>(
+  //      registrar, "Linear Update Task");
+  //}
   // Dropout
   {
     TaskVariantRegistrar registrar(DROPOUT_INIT_TASK_ID,
@@ -281,6 +290,14 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<ZerosInitializer::init_task>(
         registrar, "Zeros Init Task");
   }
+  {
+    TaskVariantRegistrar registrar(ZERO_GRAD_TASK_ID,
+                                   "Zeros Gradients");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<zero_grad_task_impl>(
+        registrar, "Zeros Gradients Task");
+  }
 
   Runtime::add_registration_callback(update_mappers);
 
@@ -291,6 +308,8 @@ GnnOp::GnnOp(const Tensor& _input)
 : numInputs(1)
 {
   inputs[0] = _input;
+  trainableInputs[0] = true;
+  resetInputGrads[0] = true;
 }
 
 GnnOp::GnnOp(const Tensor& _input1, const Tensor& _input2, const Tensor& _input3)
@@ -299,6 +318,12 @@ GnnOp::GnnOp(const Tensor& _input1, const Tensor& _input2, const Tensor& _input3
   inputs[0] = _input1;
   inputs[1] = _input2;
   inputs[2] = _input3;
+  trainableInputs[0] = true;
+  resetInputGrads[0] = true;
+  trainableInputs[1] = true;
+  resetInputGrads[1] = true;
+  trainableInputs[2] = true;
+  resetInputGrads[2] = true;
 }
 
 Model::Model(const Graph& _graph,
@@ -333,7 +358,9 @@ Tensor Model::create_node_tensor(int numHidden) const
     FieldAllocator allocator = runtime->create_field_allocator(ctx, outputFS);
     allocator.allocate_field(sizeof(DT), FID_DATA);
     t.region = runtime->create_logical_region(ctx, outputIS, outputFS);
+    runtime->attach_name(t.region, "forward");
     t.region_grad = runtime->create_logical_region(ctx, outputIS, outputFS);
+    runtime->attach_name(t.region_grad, "gradient");
   }
   // Create logical partitions
   {
@@ -453,6 +480,7 @@ Tensor Model::create_weight_tensor(int _inDim, int _outDim,
     initializer = new GlorotUniform();
     initializer->init(this, &w);
   } else {
+    initializer->init(this, &w);
   }
   return w;
 }
@@ -529,6 +557,44 @@ void Model::forward(void)
 {
   for (size_t l = 0; l < layers.size(); l++)
     layers[l]->forward(*this);
+}
+
+void Model::backward(void)
+{
+  std::set<LogicalRegion> resetedInputGrads;
+  for (int l = layers.size() - 1; l >= 0; l--) {
+    for (int i = 0; i < layers[l]->numInputs; i++)
+      if (resetedInputGrads.find(layers[l]->inputs[i].region) == resetedInputGrads.end()) {
+        resetedInputGrads.insert(layers[l]->inputs[i].region);
+      } else {
+        // This input's gradients has been reseted by other layers
+        // So we should not do it again
+        layers[l]->resetInputGrads[i] = false;
+      }
+    layers[l]->backward(*this);
+  }
+}
+
+void Model::update(void)
+{
+  for (int p = parameters.size() - 1; p >= 0; p--) {
+    optimizer->update(&parameters[p]);
+  }
+}
+
+void Model::zero_gradients(void)
+{
+  IndexLauncher launcher(ZERO_GRAD_TASK_ID, taskIS,
+                         TaskArgument(NULL, 0), taskArgs);
+  for (size_t p = 0; p < parameters.size(); p++) {
+    // regions[p]: region_grad
+    launcher.add_region_requirement(
+        RegionRequirement(parameters[p].part_grad, 0/*projection*/,
+                          WRITE_ONLY, EXCLUSIVE, parameters[p].region_grad,
+                          MAP_TO_FB_MEMORY));
+    launcher.add_field(p, FID_DATA);
+  }
+  runtime->execute_index_space(ctx, launcher);
 }
 
 Graph::Graph(Context ctx,

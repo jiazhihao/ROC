@@ -68,6 +68,8 @@ enum {
   // Initializer
   GLOROT_INIT_TASK_ID,
   ZEROS_INIT_TASK_ID,
+  // Internal
+  ZERO_GRAD_TASK_ID,
 };
 
 enum AggrType {
@@ -90,7 +92,7 @@ enum MaskType {
 
 struct Config
 {
-  int numGPUs, numMachines, totalGPUs;
+  int numGPUs, numMachines, totalGPUs, numEpochs;
   bool verbose;
   std::string filename;
 };
@@ -196,6 +198,9 @@ public:
   void load_train_mask(const Tensor& mask, const std::string& filename);
   bool init(const Config& config);
   void forward(void);
+  void backward(void);
+  void update(void);
+  void zero_gradients(void);
   Graph myGraph;
   Context ctx;
   Runtime* runtime;
@@ -216,10 +221,12 @@ public:
   virtual void init(const Model& model) = 0;
   virtual void forward(const Model& model) = 0;
   virtual void backward(const Model& model) = 0;
-  virtual void update(const Model& model) = 0;
+  //virtual void update(const Model& model) = 0;
 public:
   int numInputs, numOutputs;
   Tensor inputs[MAX_NUM_INPUTS], outputs[MAX_NUM_OUTPUTS];
+  bool trainableInputs[MAX_NUM_INPUTS];
+  bool resetInputGrads[MAX_NUM_INPUTS];
   IndexLauncher *fwdLauncher, *bwdLauncher, *gradLauncher;
 };
 
@@ -231,16 +238,16 @@ public:
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
-  virtual void update(const Model& model);
+  //virtual void update(const Model& model);
   static void forward_task(const Task *task,
                            const std::vector<PhysicalRegion> &regions,
                            Context ctx, Runtime *runtime);
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
-  static void update_task(const Task *task,
-                          const std::vector<PhysicalRegion> &regions,
-                          Context ctx, Runtime *runtime);
+  //static void update_task(const Task *task,
+  //                        const std::vector<PhysicalRegion> &regions,
+  //                        Context ctx, Runtime *runtime);
 };
 
 class InDegreeNorm : public GnnOp
@@ -250,16 +257,16 @@ public:
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
-  virtual void update(const Model& model);
+  //virtual void update(const Model& model);
   static void forward_task(const Task *task,
                            const std::vector<PhysicalRegion> &regions,
                            Context ctx, Runtime *runtime);
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
-  static void update_task(const Task *task,
-                          const std::vector<PhysicalRegion> &regions,
-                          Context ctx, Runtime *runtime);
+  //static void update_task(const Task *task,
+  //                        const std::vector<PhysicalRegion> &regions,
+  //                        Context ctx, Runtime *runtime);
 };
 
 class Linear : public GnnOp
@@ -271,16 +278,16 @@ public:
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
-  virtual void update(const Model& model);
+  //virtual void update(const Model& model);
   static void forward_task(const Task *task,
                            const std::vector<PhysicalRegion> &regions,
                            Context ctx, Runtime *runtime);
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
-  static void update_task(const Task *task,
-                          const std::vector<PhysicalRegion> &regions,
-                          Context ctx, Runtime *runtime);
+  //static void update_task(const Task *task,
+  //                        const std::vector<PhysicalRegion> &regions,
+  //                        Context ctx, Runtime *runtime);
 public:
   ActiMode activation;
   Tensor weight;
@@ -293,7 +300,7 @@ public:
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
-  virtual void update(const Model& model);
+  //virtual void update(const Model& model);
   static void init_task(const Task *task,
                         const std::vector<PhysicalRegion> &regions,
                         Context ctx, Runtime *runtime);
@@ -303,9 +310,9 @@ public:
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
-  static void update_task(const Task *task,
-                          const std::vector<PhysicalRegion> &regions,
-                          Context ctx, Runtime *runtime);
+  //static void update_task(const Task *task,
+  //                        const std::vector<PhysicalRegion> &regions,
+  //                        Context ctx, Runtime *runtime);
 public:
   float rate;
   int seed;
@@ -321,7 +328,7 @@ public:
   virtual void init(const Model& model);
   virtual void forward(const Model& model);
   virtual void backward(const Model& model);
-  virtual void update(const Model& model);
+  //virtual void update(const Model& model);
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
@@ -398,6 +405,10 @@ void load_labels_impl(const Task *task,
 void load_mask_impl(const Task *task,
                     const std::vector<PhysicalRegion> &regions,
                     Context ctx, Runtime *runtime);
+
+void zero_grad_task_impl(const Task* task,
+                         const std::vector<PhysicalRegion>& regions,
+                         Context ctx, Runtime* runtime);
 
 void gnn_fwd_task_impl(const Task *task,
                        const std::vector<PhysicalRegion> &regions,

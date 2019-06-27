@@ -36,6 +36,11 @@ void load_features_impl(const Task *task,
   int inDim = rectInput.hi[0] - rectInput.lo[0] + 1;
   assert(accInput.accessor.is_dense_arbitrary(rectInput));
   DATATYPE* input = accInput.ptr(rectInput.lo);
+  // TODO: remove me
+  for (V_ID v = rowLeft; v<= rowRight; v++)
+    for (int i = 0; i < inDim; i++)
+      input[(v-rowLeft)*inDim+i] = 1.0f;
+  return;
   std::fstream fin;
   std::string filename = prefix + ".feats.csv";
   log_load.print("Load input features: file(%s) rowLeft(%u) rowRight(%u)",

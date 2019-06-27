@@ -48,7 +48,7 @@ void norm_coop_kernel(V_ID rowLeft,
       if (threadIdx.x < todo) {
         output[(blkRowStart-rowLeft)*hiddenDim+done+threadIdx.x] =
           input[(blkRowStart-rowLeft)*hiddenDim+done+threadIdx.x]
-            / inDegree[threadIdx.x/hiddenDim];
+            / inDegree[(done+threadIdx.x)/hiddenDim];
       }
       done += blockDim.x;
       todo -= (todo > blockDim.x) ? blockDim.x : todo;
@@ -107,10 +107,15 @@ void InDegreeNorm::forward_task(const Task *task,
   assert(accOutput.rect == accInput.rect);
   assert(accOutput.rect.lo[1] == accRowPtr.rect.lo[0]);
   assert(accOutput.rect.hi[1] == accRowPtr.rect.hi[0]);
-
   norm_coop_kernel<<<GET_BLOCKS(rowRight-rowLeft+1), CUDA_NUM_THREADS>>>(
       rowLeft, rowRight, colLeft, hiddenDim, accRowPtr.ptr,
       accInput.fbCache, accOutput.fbCache); 
+  checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
+                       accOutput.rect.volume() * sizeof(DATATYPE),
+                       cudaMemcpyDeviceToHost));
+  for (int i = 0; i < 16; i++)
+    for (int j = 0; j < 8; j++)
+      printf("InDegreeNorm[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * hiddenDim + j]);
 }
 
 __host__
@@ -118,14 +123,11 @@ void InDegreeNorm::backward_task(const Task *task,
                                  const std::vector<PhysicalRegion> &regions,
                                  Context ctx, Runtime *runtime)
 {
+  const InDegreeNorm* op = (InDegreeNorm*) task->args;
+  // assert that we should reset input gradient
+  assert(op->resetInputGrads[0]);
   // Forward and backward do exact same thing
   return forward_task(task, regions, ctx, runtime);
 }
 
-__host__
-void InDegreeNorm::update_task(const Task *task,
-                               const std::vector<PhysicalRegion> &regions,
-                               Context ctx, Runtime *runtime)
-{
-}  
 

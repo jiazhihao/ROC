@@ -53,3 +53,51 @@ void ZerosInitializer::init_task(const Task* task,
   assign_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
       accW.ptr, accW.rect.volume(), 0);
 }
+
+void zero_grad_task_impl(const Task* task,
+                         const std::vector<PhysicalRegion>& regions,
+                         Context ctx, Runtime* runtime)
+{
+  assert(regions.size() == task->regions.size());
+  for (size_t i = 0; i < regions.size(); i++) {
+    Domain domain = runtime->get_index_space_domain(
+        ctx, task->regions[i].region.get_index_space());
+    DATATYPE* w;
+    switch (domain.get_dim()) {
+      case 0:
+      {
+        // Do not support 0-dim parameters
+        assert(false);
+        break;
+      }
+      case 1:
+      {
+        TensorAccessorWO<DATATYPE, 1> accW(
+            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL);
+        w = accW.ptr;
+        break;
+      }
+      case 2:
+      {
+        TensorAccessorWO<DATATYPE, 2> accW(
+            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL);
+        w = accW.ptr;
+        break;
+      }
+      case 3:
+      {
+        TensorAccessorWO<DATATYPE, 3> accW(
+            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL);
+        w = accW.ptr;
+        break;
+      }
+      default:
+      {
+         assert(false);
+         break;
+      }
+    }
+    assign_kernel<<<GET_BLOCKS(domain.get_volume()), CUDA_NUM_THREADS>>>(
+        w, domain.get_volume(), 0);
+  }
+}

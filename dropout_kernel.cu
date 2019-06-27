@@ -64,6 +64,7 @@ void Dropout::forward_task(const Task *task,
   //const Dropout* op = (Dropout*) task->args;
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
+  manager->reset();
   TensorAccessorRO<DATATYPE, 2> accInput(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
   TensorAccessorWO<DATATYPE, 2> accOutput(
@@ -105,6 +106,7 @@ void Dropout::backward_task(const Task *task,
   //const Dropout* op = (Dropout*) task->args;
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
+  manager->reset();
   TensorAccessorRO<DATATYPE, 2> accOutputGrad(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
   TensorAccessorWO<DATATYPE, 2> accInputGrad(

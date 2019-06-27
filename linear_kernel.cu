@@ -29,10 +29,13 @@ void Linear::forward_task(const Task *task,
   manager->reset();
   TensorAccessorRO<DATATYPE, 2> accWeight(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
+  assert(manager->assigned.size() == 0);
   TensorAccessorRO<DATATYPE, 2> accInput(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
+  assert(manager->assigned.size() == 1);
   TensorAccessorWO<DATATYPE, 2> accOutput(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
+  assert(manager->assigned.size() == 2);
   // Assert that regions are mapped correctly
   assert(accWeight.memory.kind() == Memory::GPU_FB_MEM);
   assert(accInput.memory.kind() == Memory::Z_COPY_MEM);
@@ -68,21 +71,41 @@ void Linear::forward_task(const Task *task,
   V_ID rowLeft = accInput.rect.lo[1], rowRight = accInput.rect.hi[1];
   int inDim = accInput.rect.hi[0] - accInput.rect.lo[0] + 1;
   int outDim = accOutput.rect.hi[0] - accOutput.rect.lo[0] + 1;
-  // Test
-  cudnnDropoutDescriptor_t dropoutDesc;
-  cudnnTensorDescriptor_t inputDesc, ouputDesc;
-  cudnnCreateDropoutDescriptor(&dropoutDesc);
-  cudnnCreateTensorDescriptor(&inputDesc);
-  double ts_start = Realm::Clock::current_time_in_microseconds();
-  checkCUDNN(cudnnSetDropoutDescriptor(dropoutDesc, manager->dnn, 0.5, manager->dropoutStates, manager->dropoutSize, 10));
-  double ts_end = Realm::Clock::current_time_in_microseconds();
-  int dims[] = {rowRight - rowLeft + 1, inDim, 1};
-  int strides[] = {dims[1] * dims[2], dims[2], 1};
-  checkCUDNN(cudnnSetTensorNdDescriptor(inputDesc, CUDNN_DATA_FLOAT, 3, dims, strides));
-  size_t size;
-  checkCUDNN(cudnnDropoutGetReserveSpaceSize(inputDesc, &size));
-  printf("dims = (%d %d %d) size = %zu time = %.4lfus\n", dims[0], dims[1], dims[2], size, ts_end - ts_start);
-  // Test
+  float alpha = 1.0f, beta = 0.0f;
+  checkCUDA(cublasSgemm(manager->blas, CUBLAS_OP_T, CUBLAS_OP_N,
+                        outDim, rowRight-rowLeft+1, inDim,
+                        &alpha, accWeight.ptr, inDim,
+                        accInput.fbCache, inDim,
+                        &beta, accOutput.fbCache, outDim));
+  if (op->activation != AC_MODE_NONE) {
+    cudnnTensorDescriptor_t outTensor;
+    cudnnActivationDescriptor_t actiDesc;
+    checkCUDNN(cudnnCreateActivationDescriptor(&actiDesc));
+    checkCUDNN(cudnnCreateTensorDescriptor(&outTensor));
+    int dims[] = {(int)(rowRight - rowLeft + 1), outDim, 1};
+    int strides[] = {dims[1] * dims[2], dims[2], 1};
+    checkCUDNN(cudnnSetTensorNdDescriptor(outTensor, CUDNN_DATA_FLOAT,
+        3, dims, strides));
+    switch (op->activation) {
+      case AC_MODE_RELU:
+        checkCUDNN(cudnnSetActivationDescriptor(
+            actiDesc, CUDNN_ACTIVATION_RELU, CUDNN_PROPAGATE_NAN, 0.0));
+        break;
+      default:
+        assert(false);
+    }
+    checkCUDNN(cudnnActivationForward(manager->dnn, actiDesc,
+                                      &alpha, outTensor, accOutput.fbCache,
+                                      &beta, outTensor, accOutput.fbCache));
+    checkCUDNN(cudnnDestroyTensorDescriptor(outTensor));
+    checkCUDNN(cudnnDestroyActivationDescriptor(actiDesc));
+  }
+  checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
+                       accOutput.rect.volume() * sizeof(DATATYPE),
+                       cudaMemcpyDeviceToHost));
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      printf("Linear[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * outDim + j]);
 }
 
 __host__
@@ -93,16 +116,18 @@ void Linear::backward_task(const Task *task,
   assert(regions.size() == 5);
   assert(task->regions.size() == 5);
   const Linear* op = (Linear*) task->args;
+  // assert that we need to reset input grad
+  assert(op->resetInputGrads[0]);
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 1> accWeight(
+  TensorAccessorRO<DATATYPE, 2> accWeight(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
   TensorAccessorRO<DATATYPE, 2> accOutputGrad(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
   TensorAccessorRO<DATATYPE, 2> accInput(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
-  TensorAccessorWO<DATATYPE, 1> accWeightGrad(
+  TensorAccessorRW<DATATYPE, 2> accWeightGrad(
       regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
   TensorAccessorWO<DATATYPE, 2> accInputGrad(
       regions[4], task->regions[4], FID_DATA, ctx, runtime, manager);
@@ -139,12 +164,46 @@ void Linear::backward_task(const Task *task,
   DATATYPE* fbWeightGrad = accWeightGrad.ptr(rectWeightGrad);
   DATATYPE* zcInputGrad = accInputGrad.ptr(rectInputGrad);
 #endif
-}
-
-__host__
-void Linear::update_task(const Task *task,
-                         const std::vector<PhysicalRegion>& regions,
-                         Context ctx, Runtime* runtime)
-{
-  assert(false);
+  V_ID rowLeft = accInput.rect.lo[1], rowRight = accInput.rect.hi[1];
+  int inDim = accInput.rect.hi[0] - accInput.rect.lo[0] + 1;
+  int outDim = accOutputGrad.rect.hi[0] - accOutputGrad.rect.lo[0] + 1;
+  float alpha = 1.0f, beta = 0.0f;
+  if (op->activation != AC_MODE_NONE) {
+    cudnnTensorDescriptor_t outTensor;
+    cudnnActivationDescriptor_t actiDesc;
+    checkCUDNN(cudnnCreateActivationDescriptor(&actiDesc));
+    checkCUDNN(cudnnCreateTensorDescriptor(&outTensor));
+    int dims[] = {(int)(rowRight - rowLeft + 1), outDim, 1};
+    int strides[] = {dims[1] * dims[2], dims[2], 1};
+    checkCUDNN(cudnnSetTensorNdDescriptor(outTensor, CUDNN_DATA_FLOAT,
+        3, dims, strides));
+    switch (op->activation) {
+      case AC_MODE_RELU:
+        checkCUDNN(cudnnSetActivationDescriptor(
+            actiDesc, CUDNN_ACTIVATION_RELU, CUDNN_PROPAGATE_NAN, 0.0));
+        break;
+      default:
+        assert(false);
+    }
+    checkCUDNN(cudnnActivationForward(manager->dnn, actiDesc,
+        &alpha, outTensor, accOutputGrad.fbCache,
+        &beta, outTensor, accOutputGrad.fbCache));
+    checkCUDNN(cudnnDestroyTensorDescriptor(outTensor));
+    checkCUDNN(cudnnDestroyActivationDescriptor(actiDesc));
+  }
+  // Compute weight_grad
+  // Note that we use alpha = 1.0 to accumulate weight gradients
+  checkCUDA(cublasSgemm(manager->blas, CUBLAS_OP_N, CUBLAS_OP_T,
+                        inDim, outDim, rowRight - rowLeft + 1,
+                        &alpha, accInput.ptr, inDim,
+                        accOutputGrad.ptr, outDim,
+                        &alpha, accWeightGrad.ptr, inDim));
+  checkCUDA(cublasSgemm(manager->blas, CUBLAS_OP_N, CUBLAS_OP_N,
+                        inDim, rowRight - rowLeft + 1, outDim,
+                        &alpha, accWeight.ptr, inDim,
+                        accOutputGrad.ptr, outDim,
+                        &beta, accInputGrad.ptr, inDim));
+  checkCUDA(cudaMemcpy(accInputGrad.ptr, accInputGrad.fbCache,
+                       accInputGrad.rect.volume() * sizeof(DATATYPE),
+                       cudaMemcpyDeviceToHost));
 }

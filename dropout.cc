@@ -107,5 +107,3 @@ void Dropout::backward(const Model& model)
   runtime->execute_index_space(ctx, launcher);
 }
 
-void Dropout::update(const Model& model)
-{}

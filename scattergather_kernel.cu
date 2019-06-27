@@ -91,6 +91,8 @@ void ScatterGather::forward_task(const Task *task,
                                  const std::vector<PhysicalRegion> &regions,
                                  Context ctx, Runtime *runtime)
 {
+  //std::thread::id this_id = std::this_thread::get_id();
+  //printf("thread %llx\n", this_id);
   assert(regions.size() == 4);
   assert(task->regions.size() == 4);
   //const ScatterGather* op = (ScatterGather*) task->args;
@@ -101,10 +103,13 @@ void ScatterGather::forward_task(const Task *task,
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
   TensorAccessorRO<EdgeStruct, 1> accColIdx(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
+  assert(manager->assigned.size() == 0);
   TensorAccessorRO<DATATYPE, 2> accInput(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
+  assert(manager->assigned.size() == 1);
   TensorAccessorWO<DATATYPE, 2> accOutput(
       regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
+  assert(manager->assigned.size() == 2);
   // Check memories are correctly mapped
   assert(accRowPtr.memory.kind() == Memory::GPU_FB_MEM);
   assert(accColIdx.memory.kind() == Memory::GPU_FB_MEM);
@@ -141,16 +146,22 @@ void ScatterGather::forward_task(const Task *task,
 
   copy_kernel<<<GET_BLOCKS(accInput.rect.volume()), CUDA_NUM_THREADS>>>(
       accInput.fbCache, accInput.ptr, accInput.rect.volume());
-  aggre_coop_kernel<<<GET_BLOCKS(accOutput.rect.volume()), CUDA_NUM_THREADS>>>(
+  int blockSize = CUDA_NUM_THREADS / hiddenDim * hiddenDim;
+  printf("blockSize = %d\n", blockSize);
+  aggre_coop_kernel<<<GET_BLOCKS(accOutput.rect.volume()), blockSize>>>(
       rowLeft, rowRight, colLeft, hiddenDim, accRowPtr.ptr, accColIdx.ptr,
       accInput.fbCache, accOutput.fbCache);
   // Need to copy results back to new_pr
-  cudaDeviceSynchronize();
+  // cudaDeviceSynchronize();
   checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
                        accOutput.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
   //copy_kernel<<<GET_BLOCKS(rectOutput.volume()), CUDA_NUM_THREADS>>>(
   //    zcOuptut, manager->fbCache[outputId], rectOutput.volume());
+  //printf("ScatterGather::Finish...\n");
+  for (int i = 0; i < 16; i++)
+    for (int j = 0; j < 8; j++)
+      printf("SG[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i*hiddenDim +j]);
 }
 
 __host__
@@ -158,13 +169,10 @@ void ScatterGather::backward_task(const Task *task,
                                   const std::vector<PhysicalRegion> &regions,
                                   Context ctx, Runtime *runtime)
 {
+  const ScatterGather* op = (ScatterGather*) task->args;
+  // assert that we need to reset input gradients
+  assert(op->resetInputGrads[0]);
   // Forward and backward do exact same thing
   return forward_task(task, regions, ctx, runtime);
 }
 
-__host__
-void ScatterGather::update_task(const Task *task,
-                                const std::vector<PhysicalRegion> &regions,
-                                Context ctx, Runtime *runtime)
-{
-}                         
