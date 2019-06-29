@@ -60,6 +60,7 @@ enum {
   DROPOUT_FWD_TASK_ID,
   DROPOUT_BWD_TASK_ID,
   DROPOUT_UPD_TASK_ID,
+  DROPOUT_INFER_TASK_ID,
   SOFTMAX_FWD_TASK_ID,
   SOFTMAX_BWD_TASK_ID,
   SOFTMAX_UPD_TASK_ID,
@@ -82,6 +83,11 @@ enum AggrType {
 enum ActiMode {
   AC_MODE_NONE,
   AC_MODE_RELU,
+};
+
+enum ModelMode {
+  MD_MODE_TRAIN,
+  MD_MODE_INFER,
 };
 
 enum MaskType {
@@ -197,10 +203,14 @@ public:
   void load_labels(const Tensor& label, const std::string& filename);
   void load_train_mask(const Tensor& mask, const std::string& filename);
   bool init(const Config& config);
+  void train_mode(void);
+  void infer_mode(void);
   void forward(void);
   void backward(void);
   void update(void);
   void zero_gradients(void);
+public:
+  ModelMode mode;
   Graph myGraph;
   Context ctx;
   Runtime* runtime;
@@ -224,6 +234,7 @@ public:
   //virtual void update(const Model& model) = 0;
 public:
   int numInputs, numOutputs;
+  ModelMode mode;
   Tensor inputs[MAX_NUM_INPUTS], outputs[MAX_NUM_OUTPUTS];
   bool trainableInputs[MAX_NUM_INPUTS];
   bool resetInputGrads[MAX_NUM_INPUTS];
@@ -310,9 +321,9 @@ public:
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
-  //static void update_task(const Task *task,
-  //                        const std::vector<PhysicalRegion> &regions,
-  //                        Context ctx, Runtime *runtime);
+  static void infer_task(const Task *task,
+                         const std::vector<PhysicalRegion> &regions,
+                         Context ctx, Runtime *runtime);
 public:
   float rate;
   int seed;

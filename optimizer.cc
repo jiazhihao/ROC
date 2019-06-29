@@ -21,8 +21,10 @@ Optimizer::Optimizer(const Model* _model)
 
 AdamOptimizer::AdamOptimizer(const Model* _model,
                              double _alpha, double _beta1,
-                             double _beta2, double _epsilon)
+                             double _beta2, double _weight_decay,
+                             double _epsilon)
 : Optimizer(_model), alpha(_alpha), beta1(_beta1), beta2(_beta2),
+  weight_decay(_weight_decay),
   epsilon(_epsilon), alpha_t(_alpha), beta1_t(1.0f), beta2_t(1.0f)
 {
   Context ctx = _model->ctx;
@@ -58,12 +60,20 @@ AdamOptimizer::AdamOptimizer(const Model* _model,
     }
     // Zeros v_regions and m_regions
     Tensor t;
+    t.numDim = p.numDim;
+    for (int i = 0; i < t.numDim; i++)
+      t.dims[i] = p.dims[i];
     t.region = v_regions[p.region];
     initializer->init(_model, &t);
     t.region = m_regions[p.region];
     initializer->init(_model, &t);
   }
   delete initializer;
+}
+
+void AdamOptimizer::set_weight_decay(double _weight_decay)
+{
+  weight_decay = _weight_decay;
 }
 
 void AdamOptimizer::next(void)

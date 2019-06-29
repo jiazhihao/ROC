@@ -198,6 +198,7 @@ void Linear::backward_task(const Task *task,
                         &alpha, accInput.ptr, inDim,
                         accOutputGrad.ptr, outDim,
                         &alpha, accWeightGrad.ptr, inDim));
+  // Compute input_grad
   checkCUDA(cublasSgemm(manager->blas, CUBLAS_OP_N, CUBLAS_OP_N,
                         inDim, rowRight - rowLeft + 1, outDim,
                         &alpha, accWeight.ptr, inDim,
@@ -206,4 +207,14 @@ void Linear::backward_task(const Task *task,
   checkCUDA(cudaMemcpy(accInputGrad.ptr, accInputGrad.fbCache,
                        accInputGrad.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
+
+  checkCUDA(cudaMemcpy((DATATYPE*)accOutputGrad.ptr, accOutputGrad.fbCache,
+                       accOutputGrad.rect.volume() * sizeof(DATATYPE),
+                       cudaMemcpyDeviceToHost));
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      printf("[Linear] OutputGrad[%d][%d]: %.4lf\n", i, j, accOutputGrad.ptr[i * outDim + j]);
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      printf("[Linear] InputGrad[%d][%d]: %.4lf\n", i, j, accInputGrad.ptr[i * inDim + j]);
 }

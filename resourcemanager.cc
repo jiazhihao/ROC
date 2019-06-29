@@ -29,15 +29,16 @@ void ResourceManager::reset(void)
 int ResourceManager::assign(PhysicalRegion pr,
                             size_t numElement)
 {
+  // TODO: uncomment me
   // See if we have pr on one cache
-  for (int i = 0; i < MAX_NUM_CACHES; i++) {
-    if (fbCache[i].region == pr.get_logical_region()) {
-      printf("[%d] numElement(%zu) volume(%zu)\n", i, numElement, fbCache[i].volume);
-      assert(numElement <= fbCache[i].volume);
-      assigned.insert(i);
-      return i;
-    }
-  }
+  //for (int i = 0; i < MAX_NUM_CACHES; i++) {
+  //  if (fbCache[i].region == pr.get_logical_region()) {
+  //    printf("[%d] numElement(%zu) volume(%zu)\n", i, numElement, fbCache[i].volume);
+  //    assert(numElement <= fbCache[i].volume);
+  //    assigned.insert(i);
+  //    return i;
+  //  }
+  //}
   int bestId = -1;
   // If not, assign pr to the smallest available cache
   for (int i = 0; i < MAX_NUM_CACHES; i++) {

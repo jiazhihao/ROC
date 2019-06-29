@@ -38,7 +38,7 @@ INC_FLAGS	?= -Inccl/build/include -Icub
 CC_FLAGS	?=
 NVCC_FLAGS	?=
 GASNET_FLAGS	?=
-LD_FLAGS	?= -lcudnn -lcublas -lcurand -lnccl -Lnccl/build/lib
+LD_FLAGS	?= -lcudart -lcuda -lcudnn -lcublas -lcurand -lnccl -Lnccl/build/lib
 # For Point and Rect typedefs
 CC_FLAGS	+= -std=c++11
 NVCC_FLAGS	+= -std=c++11

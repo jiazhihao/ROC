@@ -48,7 +48,7 @@ void norm_coop_kernel(V_ID rowLeft,
       if (threadIdx.x < todo) {
         output[(blkRowStart-rowLeft)*hiddenDim+done+threadIdx.x] =
           input[(blkRowStart-rowLeft)*hiddenDim+done+threadIdx.x]
-            / inDegree[(done+threadIdx.x)/hiddenDim];
+            / sqrt((float)inDegree[(done+threadIdx.x)/hiddenDim]);
       }
       done += blockDim.x;
       todo -= (todo > blockDim.x) ? blockDim.x : todo;
@@ -113,9 +113,13 @@ void InDegreeNorm::forward_task(const Task *task,
   checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
                        accOutput.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
-  for (int i = 0; i < 16; i++)
+
+  for (int i = 0; i < 8; i++)
     for (int j = 0; j < 8; j++)
-      printf("InDegreeNorm[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * hiddenDim + j]);
+      printf("[InDegreeNorm] Input[%d][%d]: %.4lf\n", i, j, accInput.ptr[i * hiddenDim + j]);
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      printf("[InDegreeNorm] Output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * hiddenDim + j]);
 }
 
 __host__

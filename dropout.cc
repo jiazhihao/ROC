@@ -57,53 +57,98 @@ void Dropout::init(const Model& model)
   Runtime* runtime = model.runtime;
   IndexLauncher launcher(DROPOUT_INIT_TASK_ID, model.taskIS,
                          TaskArgument(this, sizeof(Dropout)), model.taskArgs);
-  // regions[0]: input
+  // regions[0]: output
   launcher.add_region_requirement(
-      RegionRequirement(inputs[0].part, 0/*projection*/,
-                        READ_ONLY, EXCLUSIVE, inputs[0].region,
+      RegionRequirement(outputs[0].part, 0/*projection*/,
+                        WRITE_ONLY, EXCLUSIVE, outputs[0].region,
                         MAP_TO_ZC_MEMORY));
   launcher.add_field(0, FID_DATA);
+  // regions[1]: output_grad
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0].part_grad, 0/*projection*/,
+                        WRITE_ONLY, EXCLUSIVE, outputs[0].region_grad,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(1, FID_DATA);
+  runtime->execute_index_space(ctx, launcher);
 }
 
 void Dropout::forward(const Model& model)
 {
   Context ctx = model.ctx;
   Runtime* runtime = model.runtime;
-  IndexLauncher launcher(DROPOUT_FWD_TASK_ID, model.taskIS,
-                         TaskArgument(this, sizeof(Dropout)), model.taskArgs);
-  // regions[0]: input
-  launcher.add_region_requirement(
-      RegionRequirement(inputs[0].part, 0/*projection*/,
-                        READ_ONLY, EXCLUSIVE, inputs[0].region,
-                        MAP_TO_ZC_MEMORY));
-  launcher.add_field(0, FID_DATA);
-   // regions[1]: output
-  launcher.add_region_requirement(
-      RegionRequirement(outputs[0].part, 0/*projection*/,
-                        WRITE_ONLY, EXCLUSIVE, outputs[0].region,
-                        MAP_TO_ZC_MEMORY));
-  launcher.add_field(1, FID_DATA);
-  runtime->execute_index_space(ctx, launcher);
+  if (model.mode == MD_MODE_TRAIN) {
+    IndexLauncher launcher(DROPOUT_FWD_TASK_ID, model.taskIS,
+                           TaskArgument(this, sizeof(Dropout)), model.taskArgs);
+    // regions[0]: input
+    launcher.add_region_requirement(
+        RegionRequirement(inputs[0].part, 0/*projection*/,
+                          READ_ONLY, EXCLUSIVE, inputs[0].region,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(0, FID_DATA);
+     // regions[1]: output
+    launcher.add_region_requirement(
+        RegionRequirement(outputs[0].part, 0/*projection*/,
+                          WRITE_ONLY, EXCLUSIVE, outputs[0].region,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(1, FID_DATA);
+    runtime->execute_index_space(ctx, launcher);
+  } else {
+    assert(model.mode == MD_MODE_INFER);
+    IndexLauncher launcher(DROPOUT_INFER_TASK_ID, model.taskIS,
+                           TaskArgument(this, sizeof(Dropout)), model.taskArgs);
+    // regions[0]: input
+    launcher.add_region_requirement(
+        RegionRequirement(inputs[0].part, 0/*projection*/,
+                          READ_ONLY, EXCLUSIVE, inputs[0].region,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(0, FID_DATA);
+     // regions[1]: output
+    launcher.add_region_requirement(
+        RegionRequirement(outputs[0].part, 0/*projection*/,
+                          WRITE_ONLY, EXCLUSIVE, outputs[0].region,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(1, FID_DATA);
+    runtime->execute_index_space(ctx, launcher);
+  }
 }
 
 void Dropout::backward(const Model& model)
 {
   Context ctx = model.ctx;
   Runtime* runtime = model.runtime;
-  IndexLauncher launcher(DROPOUT_BWD_TASK_ID, model.taskIS,
-                         TaskArgument(this, sizeof(Dropout)), model.taskArgs);
-  // regions[0]: output_grad
-  launcher.add_region_requirement(
-      RegionRequirement(outputs[0].part_grad, 0/*projection*/,
-                        READ_ONLY, EXCLUSIVE, outputs[0].region_grad,
-                        MAP_TO_ZC_MEMORY));
-  launcher.add_field(0, FID_DATA);
-  // regions[0]: input_grad
-  launcher.add_region_requirement(
-      RegionRequirement(inputs[0].part_grad, 0/*projection*/,
-                        WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
-                        MAP_TO_ZC_MEMORY));
-  launcher.add_field(1, FID_DATA);
-  runtime->execute_index_space(ctx, launcher);
+  if (model.mode == MD_MODE_TRAIN) {
+    IndexLauncher launcher(DROPOUT_BWD_TASK_ID, model.taskIS,
+                           TaskArgument(this, sizeof(Dropout)), model.taskArgs);
+    // regions[0]: output_grad
+    launcher.add_region_requirement(
+        RegionRequirement(outputs[0].part_grad, 0/*projection*/,
+                          READ_ONLY, EXCLUSIVE, outputs[0].region_grad,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(0, FID_DATA);
+    // regions[1]: input_grad
+    launcher.add_region_requirement(
+        RegionRequirement(inputs[0].part_grad, 0/*projection*/,
+                          WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(1, FID_DATA);
+    runtime->execute_index_space(ctx, launcher);
+  } else {
+    assert(model.mode == MD_MODE_INFER);
+    IndexLauncher launcher(DROPOUT_INFER_TASK_ID, model.taskIS,
+                           TaskArgument(this, sizeof(Dropout)), model.taskArgs);
+    // regions[0]: output_grad
+    launcher.add_region_requirement(
+        RegionRequirement(outputs[0].part_grad, 0/*projection*/,
+                          READ_ONLY, EXCLUSIVE, outputs[0].region_grad,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(0, FID_DATA);
+    // regions[1]: input_grad
+    launcher.add_region_requirement(
+        RegionRequirement(inputs[0].part_grad, 0/*projection*/,
+                          WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
+                          MAP_TO_ZC_MEMORY));
+    launcher.add_field(1, FID_DATA);
+    runtime->execute_index_space(ctx, launcher);
+  }
 }
 

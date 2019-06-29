@@ -43,10 +43,20 @@ void SoftmaxCrossEntropy::init(const Model& model)
 {}
 
 void SoftmaxCrossEntropy::forward(const Model& model)
-{}
+{
+  mode = model.mode;
+  if (model.mode == MD_MODE_TRAIN) {
+    // Do nothing in training forward
+  } else {
+    // FIXME: 
+    // Currently launch backward for inference
+    backward(model);
+  }
+}
 
 void SoftmaxCrossEntropy::backward(const Model& model)
 {
+  mode = model.mode;
   Context ctx = model.ctx;
   Runtime* runtime = model.runtime;
   IndexLauncher launcher(SOFTMAX_BWD_TASK_ID, model.taskIS,

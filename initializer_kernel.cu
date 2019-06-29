@@ -28,6 +28,10 @@ void GlorotUniform::init_task(const Task* task,
       regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL);
   int inputDim = accW.rect.hi[0] - accW.rect.lo[0] + 1;
   int outputDim = accW.rect.hi[1] - accW.rect.lo[1] + 1;
+  // TODO: remove me
+  //assign_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
+  //    accW.ptr, accW.rect.volume(), 1.0/64);
+  //return;
   //float scale = *((float*) task->args);
   float scale = sqrt(6.0 / (inputDim + outputDim));
   printf("scale = %.4lf\n", scale);

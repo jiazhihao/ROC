@@ -25,10 +25,53 @@ void softmax_backward(DATATYPE* logitsGrad,
 {
   CUDA_KERNEL_LOOP(i, hiddenDim * numVertices)
   {
-    logitsGrad[i] -= labels[i];
-    int myVtxID = i % hiddenDim;
-    if (mask[myVtxID] == 0)
-      logitsGrad[i] = 0;
+    logitsGrad[i] = logitsGrad[i] - labels[i];
+    int myVtxID = i / hiddenDim;
+    if (mask[myVtxID] != MASK_TRAIN)
+      logitsGrad[i] = 0.0f;
+  }
+}
+
+struct PerfMetrics
+{
+  float trainLoss;
+  int trainAll, testAll, valAll, trainCorrect, testCorrect, valCorrect;
+};
+
+__global__
+void calc_loss(const DATATYPE* logits,
+               const DATATYPE* labels,
+               const int* mask,
+               PerfMetrics* perf,
+               int hiddenDim,
+               V_ID numVertices)
+{
+  CUDA_KERNEL_LOOP(v, numVertices)
+  {
+    float maxVal = 0.0f;
+    int trueLabel = -1;
+    for (int i = 0; i < hiddenDim; i++) {
+      maxVal = max(maxVal, logits[v*hiddenDim+i]);
+      if (labels[v*hiddenDim+i] > 0.5) {
+        assert(trueLabel == -1);
+        trueLabel = i;
+      }
+    }
+    assert(trueLabel >= 0);
+    if (mask[v] == MASK_TRAIN) {
+      atomicAdd(&(perf->trainLoss), 1 - logits[v*hiddenDim+trueLabel]);
+      atomicAdd(&(perf->trainAll), 1);
+      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+        atomicAdd(&(perf->trainCorrect), 1);
+    } else if (mask[v] == MASK_VAL) {
+      atomicAdd(&(perf->valAll), 1);
+      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+        atomicAdd(&(perf->valCorrect), 1);
+    } else if (mask[v] == MASK_TEST) {
+      atomicAdd(&(perf->testAll), 1);
+      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+        atomicAdd(&(perf->testCorrect), 1);
+    }
   }
 }
 
@@ -37,7 +80,7 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
                                         const std::vector<PhysicalRegion>& regions,
                                         Context ctx, Runtime* runtime)
 {
-  assert(regions.size() == 3 or regions.size() == 4);
+  assert(regions.size() == 3 || regions.size() == 4);
   assert(regions.size() == task->regions.size());
   const SoftmaxCrossEntropy* op = (SoftmaxCrossEntropy*) task->args;
   // assert the three inputs need reset gradient
@@ -77,10 +120,37 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
     checkCUDNN(cudnnSoftmaxForward(manager->dnn, CUDNN_SOFTMAX_ACCURATE,
         CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, inputDesc, accLogits.fbCache,
         &beta, inputDesc, accLogitsGrad.fbCache));
+    // Calculate loss
+    PerfMetrics* perf;
+    PerfMetrics perfZC;
+    perfZC.trainLoss = 0.0f;
+    perfZC.trainCorrect = perfZC.trainAll = 0;
+    perfZC.testCorrect = perfZC.testAll = 0;
+    perfZC.valCorrect = perfZC.valAll = 0;
+    checkCUDA(cudaMalloc(&perf, sizeof(PerfMetrics)));
+    checkCUDA(cudaMemcpy(perf, &perfZC, sizeof(PerfMetrics), cudaMemcpyHostToDevice));
+    calc_loss<<<GET_BLOCKS(rowRight-rowLeft+1), CUDA_NUM_THREADS>>>(
+        accLogitsGrad.fbCache, accLabels.fbCache, accMask.fbCache,
+        perf, hiddenDim, rowRight - rowLeft + 1);
+    checkCUDA(cudaMemcpy(&perfZC, perf, sizeof(PerfMetrics), cudaMemcpyDeviceToHost));
+    std::string modeInfo = (op->mode == MD_MODE_TRAIN) ? "[TRAIN]" : "	[INFER]";
+    fprintf(stderr, "%s train_loss: %.4lf  train_accuracy: %.2lf\%(%d/%d)  val_accuracy: %.2lf\%(%d/%d)  test_accuracy: %.2lf\%(%d/%d)\n",
+            modeInfo.c_str(), perfZC.trainLoss,
+            perfZC.trainCorrect * 100.0f / perfZC.trainAll, perfZC.trainCorrect, perfZC.trainAll,
+            perfZC.valCorrect * 100.0f / perfZC.valAll, perfZC.valCorrect, perfZC.valAll,
+            perfZC.testCorrect * 100.0f / perfZC.testAll, perfZC.testCorrect, perfZC.testAll);
+    // Calculate loss
     softmax_backward<<<GET_BLOCKS(accLogits.rect.volume()), CUDA_NUM_THREADS>>>(
         accLogitsGrad.fbCache, accLabels.fbCache, accMask.fbCache,
         hiddenDim, rowRight - rowLeft + 1);
   } else {
+    // When we don't have traing/val/test masks
     assert(false);
   }
+  checkCUDA(cudaMemcpy(accLogitsGrad.ptr, accLogitsGrad.fbCache,
+                       accLogitsGrad.rect.volume() * sizeof(DATATYPE),
+                       cudaMemcpyDeviceToHost));
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      printf("LogitsBack[%d][%d]: %.4lf\n", i, j, accLogitsGrad.ptr[i * hiddenDim + j]);
 }

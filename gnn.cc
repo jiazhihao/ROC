@@ -45,25 +45,39 @@ void top_level_task(const Task *task,
   Graph graph(ctx, runtime, config);
   // Model Construction
   Model model(graph, ctx, runtime);
-  Tensor input = model.create_node_tensor<DATATYPE>(64);
+  Tensor input = model.create_node_tensor<DATATYPE>(602);
   Tensor label = model.create_node_tensor<DATATYPE>(64);
   Tensor mask = model.create_node_tensor<int>(1);
   model.load_features(input, config.filename);
   model.load_labels(label, config.filename);
   model.load_train_mask(mask, config.filename);
+  //input = model.dropout(input, 0.5f);
   Tensor t = input;
-  for (int i = 0; i < 2; i++) {
+  // Tensor t = model.linear(input, 8, AC_MODE_RELU);
+  for (int i = 0; i < 1; i++) {
+    t = model.dropout(t, 0.5f);
+    t = model.indegree_norm(t);
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
     t = model.linear(t, 64, AC_MODE_RELU);
   }
   model.softmax_cross_entropy(t, label, mask);
+  // Use Adam Optimizer by default
+  // weight_decay=5e-4 as of https://github.com/tkipf/gcn/blob/master/gcn/train.py
+  AdamOptimizer* optimizer = new AdamOptimizer(&model, 0.01f);
+  optimizer->set_weight_decay(5e-4);
+  model.optimizer = optimizer;
   model.init(config);
   for (int i = 0; i < config.numEpochs; i++) {
+    model.train_mode();
     model.zero_gradients();
     model.forward();
     model.backward();
     model.update();
+    if (i % 5 == 0) {
+      model.infer_mode();
+      model.forward();
+    }
   }
 }
 
@@ -251,8 +265,16 @@ int main(int argc, char **argv)
                                    "Dropout Backward");
     registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
     registrar.set_leaf();
-    Runtime::preregister_task_variant<Linear::backward_task>(
+    Runtime::preregister_task_variant<Dropout::backward_task>(
         registrar, "Dropout Backward Task");
+  }
+  {
+    TaskVariantRegistrar registrar(DROPOUT_INFER_TASK_ID,
+                                   "Dropout Infer");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Dropout::infer_task>(
+        registrar, "Dropout Infer Task");
   }
   // Softmax
   {
@@ -329,7 +351,7 @@ GnnOp::GnnOp(const Tensor& _input1, const Tensor& _input2, const Tensor& _input3
 Model::Model(const Graph& _graph,
              Context _ctx,
              Runtime* _runtime)
-: myGraph(_graph), ctx(_ctx), runtime(_runtime)
+: mode(MD_MODE_TRAIN), myGraph(_graph), ctx(_ctx), runtime(_runtime)
 {
   Rect<1> task_rect(0, _graph.numParts-1);
   taskIS = runtime->create_index_space(ctx, task_rect);
@@ -529,6 +551,9 @@ bool Model::init(const Config& config)
     taskArgs.set_point(*it, TaskArgument(&manager, sizeof(ResourceManager*)));
   }
 
+  for (size_t l = 0; l < layers.size(); l++)
+    layers[l]->init(*this);
+
   return true;
 }
 
@@ -595,6 +620,16 @@ void Model::zero_gradients(void)
     launcher.add_field(p, FID_DATA);
   }
   runtime->execute_index_space(ctx, launcher);
+}
+
+void Model::train_mode(void)
+{
+  mode = MD_MODE_TRAIN;
+}
+
+void Model::infer_mode(void)
+{
+  mode = MD_MODE_INFER;
 }
 
 Graph::Graph(Context ctx,

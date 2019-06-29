@@ -35,14 +35,16 @@ class AdamOptimizer : public Optimizer
 {
 public:
   AdamOptimizer(const Model* _model, 
-                double _alpha, double _beta1,
-                double _beta2, double _epsilon);
+                double _alpha = 0.001f, double _beta1 = 0.9f,
+                double _beta2 = 0.999f, double _weight_decay = 0.0f,
+                double _epsilon = 1e-8);
   void next(void);
   void update(const Tensor* p);
+  void set_weight_decay(double _weight_decay);
   static void update_task(const Task* task,
                           const std::vector<PhysicalRegion>& regions,
                           Context ctx, Runtime* runtime);
-  double alpha, beta1, beta2, epsilon;
+  double alpha, beta1, beta2, weight_decay, epsilon;
   double alpha_t, beta1_t, beta2_t;
   std::map<LogicalRegion, LogicalRegion> v_regions, m_regions;
 };

@@ -49,4 +49,7 @@ void scale_kernel(float* ptr, coord_t size, float a, float b);
 
 __global__
 void assign_kernel(float* ptr, coord_t size, float value);
+
+__global__
+void copy_kernel(float* dst, const float* src, coord_t size);
 #endif

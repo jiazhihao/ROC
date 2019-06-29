@@ -36,33 +36,41 @@ void load_features_impl(const Task *task,
   int inDim = rectInput.hi[0] - rectInput.lo[0] + 1;
   assert(accInput.accessor.is_dense_arbitrary(rectInput));
   DATATYPE* input = accInput.ptr(rectInput.lo);
-  // TODO: remove me
-  for (V_ID v = rowLeft; v<= rowRight; v++)
-    for (int i = 0; i < inDim; i++)
-      input[(v-rowLeft)*inDim+i] = 1.0f;
-  return;
-  std::fstream fin;
-  std::string filename = prefix + ".feats.csv";
-  log_load.print("Load input features: file(%s) rowLeft(%u) rowRight(%u)",
-                 filename.c_str(), rowLeft, rowRight);
-  fin.open(filename, std::ios::in);
-  std::string line, word;
-  // Skip the first rowLeft lines
-  for (V_ID v = 0; v < rowLeft; v++)
-    std::getline(fin, line);
-  for (V_ID v = rowLeft; v <= rowRight; v++) {
-    std::getline(fin, line);
-    std::stringstream ss(line);
-    int feat_cnt = 0;
-    while (std::getline(ss, word, ',')) {
-      float num = std::stof(word);
-      input[(v - rowLeft) * inDim + feat_cnt] = num;
-      feat_cnt ++;
+  std::string csvFile = prefix + ".feats.csv";
+  std::string binFile = prefix + ".feats.bin";
+  FILE* binFin = fopen(binFile.c_str(), "rb");
+  if (binFin == NULL) {
+    log_load.print("Load features from CSV: file(%s) rowLeft(%u) rowRight(%u)",
+                   csvFile.c_str(), rowLeft, rowRight);
+    std::fstream csvFin;
+    csvFin.open(csvFile, std::ios::in);
+    std::string line, word;
+    // Skip the first rowLeft lines
+    for (V_ID v = 0; v < rowLeft; v++)
+      std::getline(csvFin, line);
+    for (V_ID v = rowLeft; v <= rowRight; v++) {
+      std::getline(csvFin, line);
+      std::stringstream ss(line);
+      int feat_cnt = 0;
+      while (std::getline(ss, word, ',')) {
+        float num = std::stof(word);
+        input[(v - rowLeft) * inDim + feat_cnt] = num;
+        feat_cnt ++;
+      }
+      assert(feat_cnt == inDim);
+      if (v % 10000 == 0) log_load.print("Loaded %u/%u nodes", v, rowRight);
     }
-    assert(feat_cnt == inDim);
-    if (v % 10000 == 0) log_load.print("Loaded %u/%u nodes", v, rowRight);
+    FILE* binFout = fopen((prefix + ".feats.bin").c_str(), "wb");
+    fwrite(input, sizeof(DATATYPE), rectInput.volume(), binFout);
+    fclose(binFout);
+    csvFin.close();
+  } else {
+    log_load.print("Load features from Binary: file(%s) rowLeft(%u) rowRight(%u)\n",
+                   binFile.c_str(), rowLeft, rowRight);
+    size_t ret = fread(input, sizeof(DATATYPE), rectInput.volume(), binFin);
+    assert(ret == rectInput.volume());
+    fclose(binFin);
   }
-  fin.close();
 }
 
 LoadFeaturesTask::LoadFeaturesTask(const Model& model,
@@ -94,6 +102,11 @@ void load_labels_impl(const Task *task,
   int inDim = rectLabel.hi[0] - rectLabel.lo[0] + 1;
   assert(accLabel.accessor.is_dense_arbitrary(rectLabel));
   DATATYPE* label = accLabel.ptr(rectLabel.lo);
+  // TODO: remove me
+  //for (V_ID v = rowLeft; v<= rowRight; v++)
+  //  for (int i = 0; i < inDim; i++)
+  //    label[(v-rowLeft)*inDim+i] = i == 0 ? 1.0f : 0.0f;
+  //return;
   std::string filename = prefix + ".label";
   log_load.print("Load input labels from %s", filename.c_str());
   FILE* file = fopen(filename.c_str(), "r");
@@ -140,6 +153,10 @@ void load_mask_impl(const Task *task,
   assert(rectMask.hi[0] == rectMask.lo[0]);
   assert(accMask.accessor.is_dense_arbitrary(rectMask));
   int* mask = accMask.ptr(rectMask.lo);
+  // TODO: remove me
+  //for (V_ID i = rowLeft; i <= rowRight; i++)
+  //  mask[i - rowLeft] = MASK_TRAIN;
+  //return;
   std::string filename = prefix + ".mask";
   log_load.print("Load train mask: filename(%s) rowLeft(%u) rowRight(%u)",
                  filename.c_str(), rowLeft, rowRight); 
@@ -389,3 +406,4 @@ InitTask::InitTask(const Model& model)
     add_region_requirement(rr);
   }
 }
+

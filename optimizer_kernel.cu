@@ -42,12 +42,16 @@ void scale_kernel(int count, DATATYPE a, DATATYPE b,
 
 __global__
 void adam_update(int count, DATATYPE alpha_t,
-                 DATATYPE beta1, DATATYPE beta2, DATATYPE epsilon,
+                 DATATYPE beta1, DATATYPE beta2,
+                 DATATYPE weight_decay, DATATYPE epsilon,
                  const DATATYPE *WGrad, DATATYPE *M,
                  DATATYPE *V, DATATYPE *W)
 {
+  // Reference for weight decay
+  // https://www.fast.ai/2018/07/02/adam-weight-decay/
   CUDA_KERNEL_LOOP(i, count)
   {
+    W[i] -= weight_decay * alpha_t * W[i];
     DATATYPE gt = WGrad[i];
     DATATYPE mt = beta1 * M[i] + (1 - beta1) * gt;
     DATATYPE vt = beta2 * V[i] + (1 - beta2) * gt * gt;
@@ -65,13 +69,13 @@ void AdamOptimizer::update_task(const Task* task,
   assert(regions.size() == 4);
   assert(task->regions.size() == 4);
   const AdamOptimizer* op = (AdamOptimizer*) task->args;
-  TensorAccessorRO<DATATYPE, 1> accWGrad(
+  TensorAccessorRO<DATATYPE, 2> accWGrad(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL);
-  TensorAccessorRW<DATATYPE, 1> accW(
+  TensorAccessorRW<DATATYPE, 2> accW(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, NULL);
-  TensorAccessorRW<DATATYPE, 1> accV(
+  TensorAccessorRW<DATATYPE, 2> accV(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, NULL);
-  TensorAccessorRW<DATATYPE, 1> accM(
+  TensorAccessorRW<DATATYPE, 2> accM(
       regions[3], task->regions[3], FID_DATA, ctx, runtime, NULL);
   int numReplicas = accWGrad.rect.volume() / accW.rect.volume();
   // Step 1: gather gradients in the first replica
@@ -81,7 +85,8 @@ void AdamOptimizer::update_task(const Task* task,
         accW.rect.volume(), 1.0f, src, (DATATYPE*)accWGrad.ptr);
   }
   adam_update<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
-      accW.rect.volume(), op->alpha_t, op->beta1, op->beta2, op->epsilon,
+      accW.rect.volume(), op->alpha_t, op->beta1, op->beta2,
+      op->weight_decay, op->epsilon,
       accWGrad.ptr, accM.ptr, accV.ptr, accW.ptr);
 }
 
