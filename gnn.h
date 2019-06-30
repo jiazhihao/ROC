@@ -56,6 +56,8 @@ enum {
   LINEAR_FWD_TASK_ID,
   LINEAR_BWD_TASK_ID,
   LINEAR_UPD_TASK_ID,
+  ACTIVATION_FWD_TASK_ID,
+  ACTIVATION_BWD_TASK_ID,
   DROPOUT_INIT_TASK_ID,
   DROPOUT_FWD_TASK_ID,
   DROPOUT_BWD_TASK_ID,
@@ -83,6 +85,7 @@ enum AggrType {
 enum ActiMode {
   AC_MODE_NONE,
   AC_MODE_RELU,
+  AC_MODE_SIGMOID,
 };
 
 enum ModelMode {
@@ -193,6 +196,7 @@ public:
   Tensor indegree_norm(const Tensor& _input);
   Tensor linear(const Tensor& _input, int outDim,
                 ActiMode activation, Initializer* initializer = NULL);
+  Tensor relu(const Tensor& _input);
   template<typename DT>
   Tensor create_node_tensor(int _numHidden) const;
   template<typename DT>
@@ -286,10 +290,10 @@ public:
   Linear(const Model& model, const Tensor& input,
          int outDim, ActiMode _activaiton,
          Initializer* initializer);
-  virtual void init(const Model& model);
-  virtual void forward(const Model& model);
-  virtual void backward(const Model& model);
-  //virtual void update(const Model& model);
+  void init(const Model& model);
+  void forward(const Model& model);
+  void backward(const Model& model);
+  //void update(const Model& model);
   static void forward_task(const Task *task,
                            const std::vector<PhysicalRegion> &regions,
                            Context ctx, Runtime *runtime);
@@ -302,6 +306,24 @@ public:
 public:
   ActiMode activation;
   Tensor weight;
+};
+
+class Activation : public GnnOp
+{
+public:
+  Activation(const Model& model, const Tensor& input,
+             ActiMode _actiMode);
+  void init(const Model& model);
+  void forward(const Model& model);
+  void backward(const Model& model);
+  static void forward_task(const Task *task,
+                           const std::vector<PhysicalRegion> &regions,
+                           Context ctx, Runtime *runtime);
+  static void backward_task(const Task *task,
+                            const std::vector<PhysicalRegion> &regions,
+                            Context ctx, Runtime *runtime);
+public:
+  ActiMode actiMode;
 };
 
 class Dropout : public GnnOp

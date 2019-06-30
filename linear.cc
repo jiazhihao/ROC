@@ -130,24 +130,30 @@ void Linear::backward(const Model& model)
                         READ_ONLY, EXCLUSIVE, outputs[0].region_grad,
                         MAP_TO_ZC_MEMORY));
   launcher.add_field(1, FID_DATA);
-  // regions[2]: input
+  // regions[2]: output
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0].part, 0/*projection*/,
+                        READ_ONLY, EXCLUSIVE, outputs[0].region,
+                        MAP_TO_ZC_MEMORY));
+  launcher.add_field(2, FID_DATA);
+  // regions[3]: input
   launcher.add_region_requirement(
       RegionRequirement(inputs[0].part, 0/*projection*/,
                         READ_ONLY, EXCLUSIVE, inputs[0].region,
                         MAP_TO_ZC_MEMORY));
-  launcher.add_field(2, FID_DATA);
-  // regions[3]: weight_grad
+  launcher.add_field(3, FID_DATA);
+  // regions[4]: weight_grad
   launcher.add_region_requirement(
       RegionRequirement(weight.part_grad, 0/*projection*/,
                         READ_WRITE, EXCLUSIVE, weight.region_grad,
                         MAP_TO_FB_MEMORY));
-  launcher.add_field(3, FID_DATA);
-  // regions[4]: input_grad
+  launcher.add_field(4, FID_DATA);
+  // regions[5]: input_grad
   launcher.add_region_requirement(
       RegionRequirement(inputs[0].part_grad, 0/*projection*/,
                         WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
                         MAP_TO_ZC_MEMORY));
-  launcher.add_field(4, FID_DATA);
+  launcher.add_field(5, FID_DATA);
   runtime->execute_index_space(ctx, launcher);
 }
 

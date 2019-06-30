@@ -49,9 +49,12 @@ void calc_loss(const DATATYPE* logits,
   CUDA_KERNEL_LOOP(v, numVertices)
   {
     float maxVal = 0.0f;
-    int trueLabel = -1;
+    int trueLabel = -1, myLabel = -1;
     for (int i = 0; i < hiddenDim; i++) {
-      maxVal = max(maxVal, logits[v*hiddenDim+i]);
+      if (logits[v*hiddenDim+i] > maxVal) {
+        maxVal = logits[v*hiddenDim+i];
+        myLabel = i;
+      }
       if (labels[v*hiddenDim+i] > 0.5) {
         assert(trueLabel == -1);
         trueLabel = i;
@@ -61,15 +64,15 @@ void calc_loss(const DATATYPE* logits,
     if (mask[v] == MASK_TRAIN) {
       atomicAdd(&(perf->trainLoss), 1 - logits[v*hiddenDim+trueLabel]);
       atomicAdd(&(perf->trainAll), 1);
-      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+      if (trueLabel == myLabel)
         atomicAdd(&(perf->trainCorrect), 1);
     } else if (mask[v] == MASK_VAL) {
       atomicAdd(&(perf->valAll), 1);
-      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+      if (trueLabel == myLabel)
         atomicAdd(&(perf->valCorrect), 1);
     } else if (mask[v] == MASK_TEST) {
       atomicAdd(&(perf->testAll), 1);
-      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+      if (trueLabel == myLabel)
         atomicAdd(&(perf->testCorrect), 1);
     }
   }
@@ -150,6 +153,9 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
   checkCUDA(cudaMemcpy(accLogitsGrad.ptr, accLogitsGrad.fbCache,
                        accLogitsGrad.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      printf("[Softmax] input[%d][%d]: %.4lf\n", i, j, accLogits.ptr[i * hiddenDim + j]);
   for (int i = 0; i < 8; i++)
     for (int j = 0; j < 8; j++)
       printf("LogitsBack[%d][%d]: %.4lf\n", i, j, accLogitsGrad.ptr[i * hiddenDim + j]);

@@ -29,8 +29,10 @@ ALT_MAPPERS     ?= 0		# Include alternative mappers (not recommended)
 # Put the binary file name here
 OUTFILE		?= gnn
 # List all the application source files here
-GEN_SRC		?= gnn.cc gnn_mapper.cc scattergather.cc graphnorm.cc linear.cc resourcemanager.cc optimizer.cc	initializer.cc dropout.cc softmax.cc # .cc files
-GEN_GPU_SRC	?= cuda_helper.cu load_task.cu nccl_task.cu scattergather_kernel.cu graphnorm_kernel.cu linear_kernel.cu optimizer_kernel.cu \
+GEN_SRC		?= gnn.cc gnn_mapper.cc scattergather.cc graphnorm.cc linear.cc activation.cc \
+		resourcemanager.cc optimizer.cc	initializer.cc dropout.cc softmax.cc # .cc files
+GEN_GPU_SRC	?= cuda_helper.cu load_task.cu nccl_task.cu scattergather_kernel.cu graphnorm_kernel.cu \
+		activation_kernel.cu linear_kernel.cu optimizer_kernel.cu \
 		types.cu dropout_kernel.cu initializer_kernel.cu softmax_kernel.cu # .cu files
 
 # You can modify these variables, some will be appended to by the runtime makefile

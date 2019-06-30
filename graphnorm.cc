@@ -49,8 +49,8 @@ void InDegreeNorm::forward(const Model& model)
   // regions[0]: in_row_ptrs
   launcher.add_region_requirement(
       RegionRequirement(model.myGraph.rowPtrLP, 0/*projection*/,
-                       READ_ONLY, EXCLUSIVE, model.myGraph.rowPtrLR,
-                       MAP_TO_FB_MEMORY));
+                        READ_ONLY, EXCLUSIVE, model.myGraph.rowPtrLR,
+                        MAP_TO_FB_MEMORY));
   launcher.add_field(0, FID_DATA);
   // regions[1]: in_col_idxs
   launcher.add_region_requirement(

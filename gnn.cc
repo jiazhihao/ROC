@@ -54,12 +54,13 @@ void top_level_task(const Task *task,
   //input = model.dropout(input, 0.5f);
   Tensor t = input;
   // Tensor t = model.linear(input, 8, AC_MODE_RELU);
-  for (int i = 0; i < 1; i++) {
-    t = model.dropout(t, 0.5f);
+  for (int i = 0; i < 2; i++) {
+    if (i > 0) t = model.dropout(t, 0.5f);
+    t = model.linear(t, 64, AC_MODE_NONE);
     t = model.indegree_norm(t);
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
-    t = model.linear(t, 64, AC_MODE_RELU);
+    t = model.relu(t);
   }
   model.softmax_cross_entropy(t, label, mask);
   // Use Adam Optimizer by default
@@ -243,6 +244,23 @@ int main(int argc, char **argv)
   //  Runtime::preregister_task_variant<Linear::update_task>(
   //      registrar, "Linear Update Task");
   //}
+  // Activation
+  {
+    TaskVariantRegistrar registrar(ACTIVATION_FWD_TASK_ID,
+                                   "Activation Forward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Activation::forward_task>(
+        registrar, "Activation Forward Task");
+  }
+  {
+    TaskVariantRegistrar registrar(ACTIVATION_BWD_TASK_ID,
+                                   "Activation Backward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Activation::backward_task>(
+        registrar, "Activation Backward Task");
+  }
   // Dropout
   {
     TaskVariantRegistrar registrar(DROPOUT_INIT_TASK_ID,
