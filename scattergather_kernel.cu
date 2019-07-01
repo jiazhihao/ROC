@@ -87,16 +87,17 @@ void ScatterGather::forward_task(const Task *task,
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<NodeStruct, 1> accRowPtr(
+  TensorAccessorR<NodeStruct, 1> accRowPtr(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<EdgeStruct, 1> accColIdx(
+  TensorAccessorR<EdgeStruct, 1> accColIdx(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
   assert(manager->assigned.size() == 0);
-  TensorAccessorRO<DATATYPE, 2> accInput(
+  TensorAccessorR<DATATYPE, 2> accInput(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
   assert(manager->assigned.size() == 1);
-  TensorAccessorWO<DATATYPE, 2> accOutput(
-      regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accOutput(
+      regions[3], task->regions[3], FID_DATA, ctx, runtime, manager,
+      false/*readOutput*/);
   assert(manager->assigned.size() == 2);
   // Check memories are correctly mapped
   assert(accRowPtr.memory.kind() == Memory::GPU_FB_MEM);
@@ -132,15 +133,14 @@ void ScatterGather::forward_task(const Task *task,
   assert(accOutput.rect.lo[1] == accRowPtr.rect.lo[0]);
   assert(accOutput.rect.hi[1] == accRowPtr.rect.hi[0]);
 
-  copy_kernel<<<GET_BLOCKS(accInput.rect.volume()), CUDA_NUM_THREADS>>>(
-      accInput.fbCache, accInput.ptr, accInput.rect.volume());
+  //copy_kernel<<<GET_BLOCKS(accInput.rect.volume()), CUDA_NUM_THREADS>>>(
+  //    accInput.fbCache, accInput.ptr, accInput.rect.volume());
   int blockSize = CUDA_NUM_THREADS / hiddenDim * hiddenDim;
-  printf("blockSize = %d\n", blockSize);
+  //printf("blockSize = %d\n", blockSize);
   aggre_coop_kernel<<<GET_BLOCKS(accOutput.rect.volume()), blockSize>>>(
       rowLeft, rowRight, colLeft, hiddenDim, accRowPtr.ptr, accColIdx.ptr,
       accInput.fbCache, accOutput.fbCache);
   // Need to copy results back to new_pr
-  // cudaDeviceSynchronize();
   checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
                        accOutput.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));

@@ -45,8 +45,8 @@ void top_level_task(const Task *task,
   Graph graph(ctx, runtime, config);
   // Model Construction
   Model model(graph, ctx, runtime);
-  Tensor input = model.create_node_tensor<DATATYPE>(602);
-  Tensor label = model.create_node_tensor<DATATYPE>(64);
+  Tensor input = model.create_node_tensor<DATATYPE>(3703);
+  Tensor label = model.create_node_tensor<DATATYPE>(6);
   Tensor mask = model.create_node_tensor<int>(1);
   model.load_features(input, config.filename);
   model.load_labels(label, config.filename);
@@ -54,9 +54,10 @@ void top_level_task(const Task *task,
   //input = model.dropout(input, 0.5f);
   Tensor t = input;
   // Tensor t = model.linear(input, 8, AC_MODE_RELU);
+  int outDim[] = {16, 6};
   for (int i = 0; i < 2; i++) {
     if (i > 0) t = model.dropout(t, 0.5f);
-    t = model.linear(t, 64, AC_MODE_NONE);
+    t = model.linear(t, outDim[i], AC_MODE_NONE);
     t = model.indegree_norm(t);
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
@@ -261,6 +262,23 @@ int main(int argc, char **argv)
     Runtime::preregister_task_variant<Activation::backward_task>(
         registrar, "Activation Backward Task");
   }
+  // Element
+  {
+    TaskVariantRegistrar registrar(ELEMENT_FWD_TASK_ID,
+                                   "Element Forward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Element::forward_task>(
+        registrar, "Element Forward Task");
+  }
+  {
+    TaskVariantRegistrar registrar(ELEMENT_BWD_TASK_ID,
+                                   "Element Backward");
+    registrar.add_constraint(ProcessorConstraint(Processor::TOC_PROC));
+    registrar.set_leaf();
+    Runtime::preregister_task_variant<Element::backward_task>(
+        registrar, "Element Backward Task");
+  }
   // Dropout
   {
     TaskVariantRegistrar registrar(DROPOUT_INIT_TASK_ID,
@@ -350,6 +368,17 @@ GnnOp::GnnOp(const Tensor& _input)
   inputs[0] = _input;
   trainableInputs[0] = true;
   resetInputGrads[0] = true;
+}
+
+GnnOp::GnnOp(const Tensor& _input1, const Tensor& _input2)
+: numInputs(2)
+{
+  inputs[0] = _input1;
+  inputs[1] = _input2;
+  trainableInputs[0] = true;
+  trainableInputs[1] = true;
+  resetInputGrads[0] = true;
+  resetInputGrads[1] = true;
 }
 
 GnnOp::GnnOp(const Tensor& _input1, const Tensor& _input2, const Tensor& _input3)

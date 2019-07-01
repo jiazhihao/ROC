@@ -174,6 +174,8 @@ void load_mask_impl(const Task *task,
       mask[v - rowLeft] = MASK_VAL;
     } else if (line == "Test") {
       mask[v - rowLeft] = MASK_TEST;
+    } else if (line == "None") {
+      mask[v - rowLeft] = MASK_NONE;
     } else {
       printf("Unrecognized mask: %s\n", line.c_str());
       assert(false);

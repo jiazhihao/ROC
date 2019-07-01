@@ -24,8 +24,9 @@ void GlorotUniform::init_task(const Task* task,
 {
   assert(regions.size() == 1);
   assert(task->regions.size() == 1);
-  TensorAccessorWO<DATATYPE, 2> accW(
-      regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL);
+  TensorAccessorW<DATATYPE, 2> accW(
+      regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL,
+      false/*readOutput*/);
   int inputDim = accW.rect.hi[0] - accW.rect.lo[0] + 1;
   int outputDim = accW.rect.hi[1] - accW.rect.lo[1] + 1;
   // TODO: remove me
@@ -52,8 +53,9 @@ void ZerosInitializer::init_task(const Task* task,
 {
   assert(regions.size() == 1);
   assert(task->regions.size() == 1);
-  TensorAccessorWO<DATATYPE, 2> accW(
-      regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL);
+  TensorAccessorW<DATATYPE, 2> accW(
+      regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL,
+      false/*readOutput*/);
   assign_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
       accW.ptr, accW.rect.volume(), 0);
 }
@@ -76,22 +78,25 @@ void zero_grad_task_impl(const Task* task,
       }
       case 1:
       {
-        TensorAccessorWO<DATATYPE, 1> accW(
-            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL);
+        TensorAccessorW<DATATYPE, 1> accW(
+            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL,
+            false/*readOutput*/);
         w = accW.ptr;
         break;
       }
       case 2:
       {
-        TensorAccessorWO<DATATYPE, 2> accW(
-            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL);
+        TensorAccessorW<DATATYPE, 2> accW(
+            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL,
+            false/*readOutput*/);
         w = accW.ptr;
         break;
       }
       case 3:
       {
-        TensorAccessorWO<DATATYPE, 3> accW(
-            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL);
+        TensorAccessorW<DATATYPE, 3> accW(
+            regions[i], task->regions[i], FID_DATA, ctx, runtime, NULL,
+            false/*readOutput*/);
         w = accW.ptr;
         break;
       }

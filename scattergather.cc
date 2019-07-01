@@ -108,7 +108,8 @@ void ScatterGather::backward(const Model& model)
   // regions[3]: inputGrad
   launcher.add_region_requirement(
       RegionRequirement(inputs[0].part_grad, 0/*projection*/,
-                        WRITE_ONLY, EXCLUSIVE, inputs[0].region_grad,
+                        resetInputGrads[0] ? WRITE_ONLY : READ_WRITE,
+                        EXCLUSIVE, inputs[0].region_grad,
                         MAP_TO_ZC_MEMORY));
   launcher.add_field(3, FID_DATA);
   runtime->execute_index_space(ctx, launcher);

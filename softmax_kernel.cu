@@ -72,7 +72,7 @@ void calc_loss(const DATATYPE* logits,
         atomicAdd(&(perf->valCorrect), 1);
     } else if (mask[v] == MASK_TEST) {
       atomicAdd(&(perf->testAll), 1);
-      if (trueLabel == myLabel)
+      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
         atomicAdd(&(perf->testCorrect), 1);
     }
   }
@@ -86,26 +86,27 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
   assert(regions.size() == 3 || regions.size() == 4);
   assert(regions.size() == task->regions.size());
   const SoftmaxCrossEntropy* op = (SoftmaxCrossEntropy*) task->args;
-  // assert the three inputs need reset gradient
+  // assert the three inputs need to reset gradient
   assert(op->resetInputGrads[0]);
   assert(op->resetInputGrads[1]);
   assert(op->resetInputGrads[2]);
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 2> accLogits(
+  TensorAccessorR<DATATYPE, 2> accLogits(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<DATATYPE, 2> accLabels(
+  TensorAccessorR<DATATYPE, 2> accLabels(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
-  TensorAccessorWO<DATATYPE, 2> accLogitsGrad(
-      regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accLogitsGrad(
+      regions[2], task->regions[2], FID_DATA, ctx, runtime, manager,
+      false/*readOutput*/);
   assert(accLogits.memory.kind() == Memory::Z_COPY_MEM);
   assert(accLabels.memory.kind() == Memory::Z_COPY_MEM);
   assert(accLogitsGrad.memory.kind() == Memory::Z_COPY_MEM);
   V_ID rowLeft = accLogits.rect.lo[1], rowRight = accLogits.rect.hi[1];
   int hiddenDim = accLogits.rect.hi[0] - accLogits.rect.lo[0] + 1;
   if (regions.size() == 4) {
-    TensorAccessorRO<int, 2> accMask(
+    TensorAccessorR<int, 2> accMask(
         regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
     assert(accLogits.rect == accLabels.rect);
     assert(accLogits.rect == accLogitsGrad.rect);

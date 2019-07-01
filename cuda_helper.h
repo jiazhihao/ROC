@@ -52,4 +52,7 @@ void assign_kernel(float* ptr, coord_t size, float value);
 
 __global__
 void copy_kernel(float* dst, const float* src, coord_t size);
+
+__global__
+void add_kernel(float* dst, const float* src, coord_t size);
 #endif

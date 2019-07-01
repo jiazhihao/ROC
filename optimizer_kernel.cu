@@ -69,14 +69,21 @@ void AdamOptimizer::update_task(const Task* task,
   assert(regions.size() == 4);
   assert(task->regions.size() == 4);
   const AdamOptimizer* op = (AdamOptimizer*) task->args;
-  TensorAccessorRO<DATATYPE, 2> accWGrad(
+  TensorAccessorR<DATATYPE, 2> accWGrad(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, NULL);
-  TensorAccessorRW<DATATYPE, 2> accW(
-      regions[1], task->regions[1], FID_DATA, ctx, runtime, NULL);
-  TensorAccessorRW<DATATYPE, 2> accV(
-      regions[2], task->regions[2], FID_DATA, ctx, runtime, NULL);
-  TensorAccessorRW<DATATYPE, 2> accM(
-      regions[3], task->regions[3], FID_DATA, ctx, runtime, NULL);
+  TensorAccessorW<DATATYPE, 2> accW(
+      regions[1], task->regions[1], FID_DATA, ctx, runtime, NULL,
+      true/*readOutput*/);
+  TensorAccessorW<DATATYPE, 2> accV(
+      regions[2], task->regions[2], FID_DATA, ctx, runtime, NULL,
+      true/*readOutput*/);
+  TensorAccessorW<DATATYPE, 2> accM(
+      regions[3], task->regions[3], FID_DATA, ctx, runtime, NULL,
+      true/*readOutput*/);
+  assert(accWGrad.memory.kind() == Memory::GPU_FB_MEM);
+  assert(accW.memory.kind() == Memory::GPU_FB_MEM);
+  assert(accV.memory.kind() == Memory::GPU_FB_MEM);
+  assert(accM.memory.kind() == Memory::GPU_FB_MEM);
   int numReplicas = accWGrad.rect.volume() / accW.rect.volume();
   // Step 1: gather gradients in the first replica
   for (int i = 1; i < numReplicas; i++) {

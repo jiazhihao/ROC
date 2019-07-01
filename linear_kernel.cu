@@ -27,14 +27,15 @@ void Linear::forward_task(const Task *task,
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 2> accWeight(
+  TensorAccessorR<DATATYPE, 2> accWeight(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
   assert(manager->assigned.size() == 0);
-  TensorAccessorRO<DATATYPE, 2> accInput(
+  TensorAccessorR<DATATYPE, 2> accInput(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
   assert(manager->assigned.size() == 1);
-  TensorAccessorWO<DATATYPE, 2> accOutput(
-      regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accOutput(
+      regions[2], task->regions[2], FID_DATA, ctx, runtime, manager,
+      false/*readOutput*/);
   assert(manager->assigned.size() == 2);
   // Assert that regions are mapped correctly
   assert(accWeight.memory.kind() == Memory::GPU_FB_MEM);
@@ -132,23 +133,23 @@ void Linear::backward_task(const Task *task,
   assert(regions.size() == 6);
   assert(task->regions.size() == 6);
   const Linear* op = (Linear*) task->args;
-  // assert that we need to reset input grad
-  assert(op->resetInputGrads[0]);
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 2> accWeight(
+  TensorAccessorR<DATATYPE, 2> accWeight(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<DATATYPE, 2> accOutputGrad(
+  TensorAccessorR<DATATYPE, 2> accOutputGrad(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<DATATYPE, 2> accOutput(
+  TensorAccessorR<DATATYPE, 2> accOutput(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<DATATYPE, 2> accInput(
+  TensorAccessorR<DATATYPE, 2> accInput(
       regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRW<DATATYPE, 2> accWeightGrad(
-      regions[4], task->regions[4], FID_DATA, ctx, runtime, manager);
-  TensorAccessorWO<DATATYPE, 2> accInputGrad(
-      regions[5], task->regions[5], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accWeightGrad(
+      regions[4], task->regions[4], FID_DATA, ctx, runtime, manager,
+      true/*readOutput*/);
+  TensorAccessorW<DATATYPE, 2> accInputGrad(
+      regions[5], task->regions[5], FID_DATA, ctx, runtime, manager,
+      !(op->resetInputGrads[0])/*readOutput*/);
   // Assert that memories are correctly mapped
   assert(accWeight.memory.kind() == Memory::GPU_FB_MEM);
   assert(accOutputGrad.memory.kind() == Memory::Z_COPY_MEM);
@@ -221,11 +222,12 @@ void Linear::backward_task(const Task *task,
                         accOutputGrad.fbCache, outDim,
                         &alpha, accWeightGrad.ptr, inDim));
   // Compute input_grad
+  // Note that we use alpha = 1.0 to accumulate input gradients
   checkCUDA(cublasSgemm(manager->blas, CUBLAS_OP_N, CUBLAS_OP_N,
                         inDim, rowRight - rowLeft + 1, outDim,
                         &alpha, accWeight.ptr, inDim,
                         accOutputGrad.fbCache, outDim,
-                        &beta, accInputGrad.fbCache, inDim));
+                        &alpha, accInputGrad.fbCache, inDim));
   checkCUDA(cudaMemcpy(accInputGrad.ptr, accInputGrad.fbCache,
                        accInputGrad.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));

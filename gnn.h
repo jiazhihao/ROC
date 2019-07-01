@@ -63,6 +63,8 @@ enum {
   DROPOUT_BWD_TASK_ID,
   DROPOUT_UPD_TASK_ID,
   DROPOUT_INFER_TASK_ID,
+  ELEMENT_FWD_TASK_ID,
+  ELEMENT_BWD_TASK_ID,
   SOFTMAX_FWD_TASK_ID,
   SOFTMAX_BWD_TASK_ID,
   SOFTMAX_UPD_TASK_ID,
@@ -88,6 +90,11 @@ enum ActiMode {
   AC_MODE_SIGMOID,
 };
 
+enum ElementType {
+  EW_TYPE_ADD,
+  EW_TYPE_MUL,
+};
+
 enum ModelMode {
   MD_MODE_TRAIN,
   MD_MODE_INFER,
@@ -96,7 +103,8 @@ enum ModelMode {
 enum MaskType {
   MASK_TRAIN,
   MASK_VAL,
-  MASK_TEST
+  MASK_TEST,
+  MASK_NONE,
 };
 
 struct Config
@@ -190,6 +198,7 @@ class Model
 {
 public:
   Model(const Graph& _graph, Context _ctx, Runtime* _runtime);
+  Tensor add(const Tensor& _input1, const Tensor& _input2);
   Tensor dropout(const Tensor& _input, float rate, int seed = 0);
   Tensor scatter_gather(const Tensor& _input);
   void softmax_cross_entropy(const Tensor& logits, const Tensor& labels, const Tensor& mask);
@@ -197,6 +206,7 @@ public:
   Tensor linear(const Tensor& _input, int outDim,
                 ActiMode activation, Initializer* initializer = NULL);
   Tensor relu(const Tensor& _input);
+  Tensor sigmoid(const Tensor& _input);
   template<typename DT>
   Tensor create_node_tensor(int _numHidden) const;
   template<typename DT>
@@ -231,6 +241,7 @@ class GnnOp
 {
 public:
   GnnOp(const Tensor& input);
+  GnnOp(const Tensor& input1, const Tensor& input2);
   GnnOp(const Tensor& input1, const Tensor& input2, const Tensor& input3);
   virtual void init(const Model& model) = 0;
   virtual void forward(const Model& model) = 0;
@@ -324,6 +335,24 @@ public:
                             Context ctx, Runtime *runtime);
 public:
   ActiMode actiMode;
+};
+
+class Element : public GnnOp
+{
+public:
+  Element(const Model& model, const Tensor& input0,
+          const Tensor& input1, ElementType _elementType);
+  void init(const Model& model);
+  void forward(const Model& model);
+  void backward(const Model& model);
+  static void forward_task(const Task *task,
+                           const std::vector<PhysicalRegion> &regions,
+                           Context ctx, Runtime *runtime);
+  static void backward_task(const Task *task,
+                            const std::vector<PhysicalRegion> &regions,
+                            Context ctx, Runtime *runtime);
+public:
+  ElementType elementType;
 };
 
 class Dropout : public GnnOp

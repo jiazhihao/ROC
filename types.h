@@ -27,14 +27,13 @@ enum FieldIDs {
 class ResourceManager;
 
 template<typename DT, int dim>
-struct TensorAccessorRO {
-  TensorAccessorRO(PhysicalRegion region,
-                   RegionRequirement req,
-                   FieldID fid,
-                   Context ctx,
-                   Runtime* runtime,
-                   ResourceManager* manager);
-  const AccessorRO<DT, dim> acc;
+struct TensorAccessorR {
+  TensorAccessorR(PhysicalRegion region,
+                  RegionRequirement req,
+                  FieldID fid,
+                  Context ctx,
+                  Runtime* runtime,
+                  ResourceManager* manager);
   Rect<dim> rect;
   Memory memory;
   const DT *ptr;
@@ -42,34 +41,18 @@ struct TensorAccessorRO {
 };
 
 template<typename DT, int dim>
-struct TensorAccessorRW {
-  TensorAccessorRW(PhysicalRegion region,
-                   RegionRequirement req,
-                   FieldID fid,
-                   Context ctx,
-                   Runtime* runtime,
-                   ResourceManager* manager);
-  const AccessorRW<DT, dim> acc;
+struct TensorAccessorW {
+  TensorAccessorW(PhysicalRegion region,
+                  RegionRequirement req,
+                  FieldID fid,
+                  Context ctx,
+                  Runtime* runtime,
+                  ResourceManager* manager,
+                  bool readOutput = false);
   Rect<dim> rect;
   Memory memory;
   DT *ptr;
   DT *fbCache;
 };
-
-template<typename DT, int dim>
-struct TensorAccessorWO {
-  TensorAccessorWO(PhysicalRegion region,
-                   RegionRequirement req,
-                   FieldID fid,
-                   Context ctx,
-                   Runtime* runtime,
-                   ResourceManager* manager);
-  const AccessorWO<DT, dim> acc;
-  Rect<dim> rect;
-  Memory memory;
-  DT *ptr;
-  DT *fbCache;
-};
-
 
 #endif

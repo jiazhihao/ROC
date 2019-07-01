@@ -69,10 +69,11 @@ void Dropout::forward_task(const Task *task,
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 2> accInput(
+  TensorAccessorR<DATATYPE, 2> accInput(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
-  TensorAccessorWO<DATATYPE, 2> accOutput(
-      regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accOutput(
+      regions[1], task->regions[1], FID_DATA, ctx, runtime, manager,
+      false/*readOutput*/);
   assert(accInput.memory.kind() == Memory::Z_COPY_MEM);
   assert(accOutput.memory.kind() == Memory::Z_COPY_MEM);
   V_ID rowLeft = accInput.rect.lo[1], rowRight = accInput.rect.hi[1];
@@ -110,14 +111,19 @@ void Dropout::backward_task(const Task *task,
 {
   assert(regions.size() == 2);
   assert(task->regions.size() == 2);
-  //const Dropout* op = (Dropout*) task->args;
+  const Dropout* op = (Dropout*) task->args;
+  // Currently assert we must reset input grads because 
+  // cudnnDropoutForward/cudnnDropoutBackward do not support 
+  // alpha/beta to accumulate results
+  assert(op->resetInputGrads[0]);
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<DATATYPE, 2> accOutputGrad(
+  TensorAccessorR<DATATYPE, 2> accOutputGrad(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
-  TensorAccessorWO<DATATYPE, 2> accInputGrad(
-      regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accInputGrad(
+      regions[1], task->regions[1], FID_DATA, ctx, runtime, manager,
+      false/*readOutput*/);
   assert(accOutputGrad.memory.kind() == Memory::Z_COPY_MEM);
   assert(accInputGrad.memory.kind() == Memory::Z_COPY_MEM);
   V_ID rowLeft = accInputGrad.rect.lo[1], rowRight = accInputGrad.rect.hi[1];

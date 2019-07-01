@@ -66,14 +66,15 @@ void InDegreeNorm::forward_task(const Task *task,
   ResourceManager* manager = *((ResourceManager**) task->local_args);
   assert(manager->proc_id == task->current_proc.id);
   manager->reset();
-  TensorAccessorRO<NodeStruct, 1> accRowPtr(
+  TensorAccessorR<NodeStruct, 1> accRowPtr(
       regions[0], task->regions[0], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<EdgeStruct, 1> accColIdx(
+  TensorAccessorR<EdgeStruct, 1> accColIdx(
       regions[1], task->regions[1], FID_DATA, ctx, runtime, manager);
-  TensorAccessorRO<DATATYPE, 2> accInput(
+  TensorAccessorR<DATATYPE, 2> accInput(
       regions[2], task->regions[2], FID_DATA, ctx, runtime, manager);
-  TensorAccessorWO<DATATYPE, 2> accOutput(
-      regions[3], task->regions[3], FID_DATA, ctx, runtime, manager);
+  TensorAccessorW<DATATYPE, 2> accOutput(
+      regions[3], task->regions[3], FID_DATA, ctx, runtime, manager,
+      false/*readOutput*/);
   // Assert memories are correctly mapped
   assert(accRowPtr.memory.kind() == Memory::GPU_FB_MEM);
   assert(accColIdx.memory.kind() == Memory::GPU_FB_MEM);
