@@ -27,9 +27,9 @@ void aggre_coop_kernel(V_ID rowLeft,
                        const DATATYPE* input,
                        DATATYPE* output)
 {
-  assert(blockDim.x % hiddenDim == 0);
+  //assert(blockDim.x % hiddenDim == 0);
   //assert(aggrType == AGGR_SUM || aggrType == AGGR_AVG);
-  int vtxPerBlock = blockDim.x / hiddenDim;
+  int vtxPerBlock = CUDA_NUM_THREADS / hiddenDim;
   typedef cub::BlockScan<E_ID, CUDA_NUM_THREADS> BlockScan;
   __shared__ BlockScan::TempStorage temp_storage;
   __shared__ E_ID blkColStart;
@@ -58,9 +58,10 @@ void aggre_coop_kernel(V_ID rowLeft,
     BlockScan(temp_storage).ExclusiveSum(myNumEdges, scratchOffset, totalNumEdges);
     E_ID done = 0;
     while (totalNumEdges > 0) {
-      if (tidDiv < totalNumEdges) {
+      if (tidDiv < totalNumEdges && tidDiv < vtxPerBlock) {
         EdgeStruct es = col_idxs[blkColStart + done + tidDiv - colLeft];
         DATATYPE val = input[es.src * hiddenDim + tidMod];
+        assert(es.dst >= blkRowStart && es.dst < blkRowStart + vtxPerBlock);
         int offset = (es.dst - blkRowStart) * hiddenDim + tidMod;
         atomicAdd(&acc_h[offset], val);
       }
@@ -68,7 +69,7 @@ void aggre_coop_kernel(V_ID rowLeft,
       totalNumEdges -= (totalNumEdges > vtxPerBlock) ? vtxPerBlock : totalNumEdges;
     }
     __syncthreads();
-    if (tidDiv + blkRowStart <= rowRight) {
+    if (tidDiv < vtxPerBlock && tidDiv + blkRowStart <= rowRight) {
       output[(blkRowStart-rowLeft)*hiddenDim+threadIdx.x] = acc_h[threadIdx.x];
     }
   }
@@ -137,7 +138,7 @@ void ScatterGather::forward_task(const Task *task,
   //    accInput.fbCache, accInput.ptr, accInput.rect.volume());
   int blockSize = CUDA_NUM_THREADS / hiddenDim * hiddenDim;
   //printf("blockSize = %d\n", blockSize);
-  aggre_coop_kernel<<<GET_BLOCKS(accOutput.rect.volume()), blockSize>>>(
+  aggre_coop_kernel<<<GET_BLOCKS(accOutput.rect.volume()), CUDA_NUM_THREADS>>>(
       rowLeft, rowRight, colLeft, hiddenDim, accRowPtr.ptr, accColIdx.ptr,
       accInput.fbCache, accOutput.fbCache);
   // Need to copy results back to new_pr
@@ -153,6 +154,7 @@ void ScatterGather::forward_task(const Task *task,
   for (int i = 0; i < 8; i++)
     for (int j = 0; j < 8; j++)
       printf("[SG] output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i*hiddenDim +j]);
+  checkCUDA(cudaDeviceSynchronize());
 }
 
 __host__

@@ -16,22 +16,17 @@
 #ifndef _GNN_H_
 #define _GNN_H_
 
-#include "nccl_helper.h"
 #include "legion.h"
 #include "types.h"
 #include "optimizer.h"
 #include "initializer.h"
-#include "realm/cuda/cuda_module.h" // For Realm::Cuda::GPUFBMemory
-#include <cudnn.h>
-#include <cuda_runtime.h>
-#include <cublas_v2.h>
+#include "resourcemanager.h"
 
 using namespace Legion;
 
 #define MAX_FILE_LEN 64
 #define MAX_NUM_PARTS 64
 #define MAX_NUM_MACHINES 64
-#define MAX_NUM_CACHES 4
 #define MAX_NUM_INPUTS 8
 #define MAX_NUM_OUTPUTS 8
 #define MAX_NUM_DIM 4
@@ -129,39 +124,6 @@ struct Graph
   //ncclComm_t nccl[MAX_NUM_PARTS];
   LogicalRegion rowPtrLR, rawRowLR, colIdxLR, rawColLR;
   LogicalPartition rowPtrLP, rawRowLP, colIdxLP, rawColLP;
-};
-
-class ResourceManager
-{
-public:
-  struct ReservedSpace {
-    void* ptr;
-    size_t size;
-  };
-  ResourceManager(void);
-  ~ResourceManager(void);
-  void reset(void);
-  int assign(PhysicalRegion lr, size_t numElements);
-  struct CacheSlot {
-    LogicalRegion region;
-    size_t volume;
-    DATATYPE* ptr;
-  };
-  unsigned long long proc_id;
-  cudnnHandle_t dnn;
-  cublasHandle_t blas;
-  ncclComm_t nccl;
-  // Dropout state
-  void *dropoutStates;
-  size_t dropoutSize;
-  Realm::Cuda::GPUFBMemory* allocator;
-  //V_ID numNodes;
-  //E_ID numEdges;
-  //int numParts;
-  CacheSlot fbCache[MAX_NUM_CACHES];
-  std::set<int> assigned;
-  std::map<LogicalRegion, ReservedSpace> reservedSpace;
-  std::map<LogicalRegion, cudnnDropoutDescriptor_t> dropoutDesc;
 };
 
 struct Tensor

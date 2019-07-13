@@ -45,8 +45,8 @@ void top_level_task(const Task *task,
   Graph graph(ctx, runtime, config);
   // Model Construction
   Model model(graph, ctx, runtime);
-  Tensor input = model.create_node_tensor<DATATYPE>(3703);
-  Tensor label = model.create_node_tensor<DATATYPE>(6);
+  Tensor input = model.create_node_tensor<DATATYPE>(602);
+  Tensor label = model.create_node_tensor<DATATYPE>(41);
   Tensor mask = model.create_node_tensor<int>(1);
   model.load_features(input, config.filename);
   model.load_labels(label, config.filename);
@@ -54,20 +54,20 @@ void top_level_task(const Task *task,
   //input = model.dropout(input, 0.5f);
   Tensor t = input;
   // Tensor t = model.linear(input, 8, AC_MODE_RELU);
-  int outDim[] = {16, 6};
-  for (int i = 0; i < 2; i++) {
-    if (i > 0) t = model.dropout(t, 0.5f);
+  int outDim[] = {64, 64, 41};
+  for (int i = 0; i < 3; i++) {
+    t = model.dropout(t, 0.5f);
     t = model.linear(t, outDim[i], AC_MODE_NONE);
     t = model.indegree_norm(t);
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
-    t = model.relu(t);
+    if (i != 2) t = model.relu(t);
   }
   model.softmax_cross_entropy(t, label, mask);
   // Use Adam Optimizer by default
   // weight_decay=5e-4 as of https://github.com/tkipf/gcn/blob/master/gcn/train.py
   AdamOptimizer* optimizer = new AdamOptimizer(&model, 0.01f);
-  optimizer->set_weight_decay(5e-4);
+  optimizer->set_weight_decay(5e-2);
   model.optimizer = optimizer;
   model.init(config);
   for (int i = 0; i < config.numEpochs; i++) {
@@ -649,6 +649,7 @@ void Model::backward(void)
 
 void Model::update(void)
 {
+  optimizer->next();
   for (int p = parameters.size() - 1; p >= 0; p--) {
     optimizer->update(&parameters[p]);
   }

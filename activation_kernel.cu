@@ -69,6 +69,7 @@ void Activation::forward_task(const Task *task,
                        cudaMemcpyDeviceToHost));
   checkCUDNN(cudnnDestroyTensorDescriptor(inTensor));
   checkCUDNN(cudnnDestroyActivationDescriptor(actiDesc));
+  checkCUDA(cudaDeviceSynchronize());
 }
 
 __host__
@@ -139,4 +140,5 @@ void Activation::backward_task(const Task *task,
       printf("[Activation:backward](%d, %d): outputGrad(%.4lf) output(%.4lf) input(%.4lf) inputGrad(%.4lf)\n",
              i, j, accOutputGrad.ptr[i*hiddenDim+j], accOutput.ptr[i*hiddenDim+j],
              accInput.ptr[i*hiddenDim+j], accInputGrad.ptr[i*hiddenDim+j]);
+  checkCUDA(cudaDeviceSynchronize());
 }

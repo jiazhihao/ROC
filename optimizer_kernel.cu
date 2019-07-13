@@ -51,8 +51,9 @@ void adam_update(int count, DATATYPE alpha_t,
   // https://www.fast.ai/2018/07/02/adam-weight-decay/
   CUDA_KERNEL_LOOP(i, count)
   {
-    W[i] -= weight_decay * alpha_t * W[i];
-    DATATYPE gt = WGrad[i];
+    //W[i] -= weight_decay * alpha_t * W[i];
+    //DATATYPE gt = WGrad[i];
+    DATATYPE gt = WGrad[i] + weight_decay * W[i];
     DATATYPE mt = beta1 * M[i] + (1 - beta1) * gt;
     DATATYPE vt = beta2 * V[i] + (1 - beta2) * gt * gt;
     M[i] = mt;
@@ -91,9 +92,13 @@ void AdamOptimizer::update_task(const Task* task,
     add_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
         accW.rect.volume(), 1.0f, src, (DATATYPE*)accWGrad.ptr);
   }
+  fprintf(stderr, "alpha = %.8lf alpha_t = %.8lf decay = %.8lf\n",
+          op->alpha, op->alpha_t, op->weight_decay);
+  // Step 2: Adam update
   adam_update<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
       accW.rect.volume(), op->alpha_t, op->beta1, op->beta2,
       op->weight_decay, op->epsilon,
       accWGrad.ptr, accM.ptr, accV.ptr, accW.ptr);
+  checkCUDA(cudaDeviceSynchronize());
 }
 

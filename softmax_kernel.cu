@@ -72,7 +72,7 @@ void calc_loss(const DATATYPE* logits,
         atomicAdd(&(perf->valCorrect), 1);
     } else if (mask[v] == MASK_TEST) {
       atomicAdd(&(perf->testAll), 1);
-      if (logits[v*hiddenDim+trueLabel] + 1e-8 >= maxVal)
+      if (trueLabel == myLabel)
         atomicAdd(&(perf->testCorrect), 1);
     }
   }
@@ -160,4 +160,5 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
   for (int i = 0; i < 8; i++)
     for (int j = 0; j < 8; j++)
       printf("LogitsBack[%d][%d]: %.4lf\n", i, j, accLogitsGrad.ptr[i * hiddenDim + j]);
+  checkCUDA(cudaDeviceSynchronize());
 }

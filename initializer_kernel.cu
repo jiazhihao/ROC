@@ -17,6 +17,7 @@
 #include "types.h"
 #include "cuda_helper.h"
 #include <curand.h>
+#include <ctime>
 
 void GlorotUniform::init_task(const Task* task,
                               const std::vector<PhysicalRegion>& regions,
@@ -39,7 +40,9 @@ void GlorotUniform::init_task(const Task* task,
   curandGenerator_t gen;
   curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
   // TODO: change to random seed before releasing
-  curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
+  int seed = *((int*) task->args);
+  fprintf(stderr, "seed = %d\n", seed);
+  curandSetPseudoRandomGeneratorSeed(gen, seed);
   checkCUDA(curandGenerateUniform(gen, accW.ptr, accW.rect.volume()));
   scale_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
       accW.ptr, accW.rect.volume(), -scale, scale);
@@ -58,6 +61,7 @@ void ZerosInitializer::init_task(const Task* task,
       false/*readOutput*/);
   assign_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
       accW.ptr, accW.rect.volume(), 0);
+  checkCUDA(cudaDeviceSynchronize());
 }
 
 void zero_grad_task_impl(const Task* task,
@@ -107,6 +111,7 @@ void zero_grad_task_impl(const Task* task,
       }
     }
     assign_kernel<<<GET_BLOCKS(domain.get_volume()), CUDA_NUM_THREADS>>>(
-        w, domain.get_volume(), 0);
+        w, domain.get_volume(), 0.0f);
   }
+  checkCUDA(cudaDeviceSynchronize());
 }

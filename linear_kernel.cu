@@ -114,6 +114,7 @@ void Linear::forward_task(const Task *task,
   for (int i = 0; i < 8; i++)
     for (int j = 0; j < 8; j++)
       printf("[Linear:forward] output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * outDim + j]);
+  checkCUDA(cudaDeviceSynchronize());
 }
 
 __global__
@@ -240,4 +241,5 @@ void Linear::backward_task(const Task *task,
   for (int i = 0; i < 8; i++)
     for (int j = 0; j < 8; j++)
       printf("[Linear:backward] InputGrad[%d][%d]: %.4lf\n", i, j, accInputGrad.ptr[i * inDim + j]);
+  checkCUDA(cudaDeviceSynchronize());
 }

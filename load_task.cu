@@ -343,6 +343,10 @@ ResourceManager* init_task_impl(const Task *task,
   // init cublas
   checkCUDA(cublasCreate(&(manager->blas)));
   checkCUDNN(cudnnCreate(&(manager->dnn)));
+  checkCUDA(curandCreateGenerator(&(manager->rand), CURAND_RNG_PSEUDO_DEFAULT));
+  // init curand
+  // TODO: change to random seed before releasing
+  checkCUDA(curandSetPseudoRandomGeneratorSeed(manager->rand, 0));
   // init dropout states
   checkCUDNN(cudnnDropoutGetStatesSize(manager->dnn, &(manager->dropoutSize)));
   checkCUDA(cudaMalloc(&(manager->dropoutStates), manager->dropoutSize));

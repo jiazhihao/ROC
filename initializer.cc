@@ -34,8 +34,9 @@ void GlorotUniform::init(const Model* model,
   Context ctx = model->ctx;
   Runtime* runtime = model->runtime;
   assert(p->numDim == 2);
-  float scale = sqrt(6.0 / (p->dims[0] + p->dims[1]));
-  TaskLauncher launcher(GLOROT_INIT_TASK_ID, TaskArgument(&scale, sizeof(float)));
+  //float scale = sqrt(6.0 / (p->dims[0] + p->dims[1]));
+  int num = std::rand();
+  TaskLauncher launcher(GLOROT_INIT_TASK_ID, TaskArgument(&num, sizeof(int)));
   // regions[0]: p->region
   launcher.add_region_requirement(
       RegionRequirement(p->region,

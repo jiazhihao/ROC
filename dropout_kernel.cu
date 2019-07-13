@@ -102,6 +102,7 @@ void Dropout::forward_task(const Task *task,
                        cudaMemcpyDeviceToHost));
   checkCUDNN(cudnnDestroyTensorDescriptor(inputDesc));
   checkCUDNN(cudnnDestroyTensorDescriptor(outputDesc));
+  checkCUDA(cudaDeviceSynchronize());
 }
 
 __host__
@@ -152,6 +153,7 @@ void Dropout::backward_task(const Task *task,
                        cudaMemcpyDeviceToHost));
   checkCUDNN(cudnnDestroyTensorDescriptor(inputDesc));
   checkCUDNN(cudnnDestroyTensorDescriptor(outputDesc));
+  checkCUDA(cudaDeviceSynchronize());
 }
 
 __host__
@@ -174,4 +176,5 @@ void Dropout::infer_task(const Task *task,
   DATATYPE* output = accOutput.ptr(rectOutput.lo);
   copy_kernel<<<GET_BLOCKS(rectInput.volume()), CUDA_NUM_THREADS>>>(
     output, input, rectInput.volume());
+  checkCUDA(cudaDeviceSynchronize());
 }

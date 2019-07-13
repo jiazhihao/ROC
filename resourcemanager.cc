@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#include "gnn.h"
+#include "resourcemanager.h"
 
 ResourceManager::ResourceManager(void)
 {}
