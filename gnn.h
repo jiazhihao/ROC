@@ -106,7 +106,9 @@ struct Config
 {
   int numGPUs, numMachines, totalGPUs, numEpochs;
   bool verbose;
+  float learning_rate, weight_decay, dropout_rate;
   std::string filename;
+  std::vector<int> layers;
 };
 
 struct NcclInfo

@@ -32,12 +32,26 @@ void top_level_task(const Task *task,
   config.filename = "";
   config.verbose = false;
   config.numEpochs = 1;
+  config.learning_rate = 0.01f;
+  config.weight_decay = 0.05f;
+  config.dropout_rate = 0.5f;
+  config.layers.clear();
   {
     const InputArgs &command_args = HighLevelRuntime::get_input_args();
     char **argv = command_args.argv;
     int argc = command_args.argc;
     parse_input_args(argv, argc, config);
     log_gnn.print("GNN settings: filename = %s", config.filename.c_str());
+    fprintf(stderr, "        ===== GNN settings =====\n");
+    fprintf(stderr, "        dataset = %s\n"
+            "        num_epochs = %d learning_rate = %.4lf\n"
+            "        weight_decay = %.4lf dropout_rate = %.4lf\n",
+            config.filename.c_str(), config.numEpochs,
+            config.learning_rate, config.weight_decay, config.dropout_rate);
+    fprintf(stderr, "        Layers:");
+    for (size_t i = 0; i < config.layers.size(); i++)
+      fprintf(stderr, " %d", config.layers[i]);
+    fprintf(stderr, "\n");
     config.numMachines = Realm::Machine::get_machine().get_address_space_count();
     config.totalGPUs = config.numMachines * config.numGPUs;
     assert(config.totalGPUs > 0);
@@ -54,20 +68,20 @@ void top_level_task(const Task *task,
   //input = model.dropout(input, 0.5f);
   Tensor t = input;
   // Tensor t = model.linear(input, 8, AC_MODE_RELU);
-  int outDim[] = {64, 64, 41};
-  for (int i = 0; i < 3; i++) {
-    t = model.dropout(t, 0.5f);
-    t = model.linear(t, outDim[i], AC_MODE_NONE);
+  //int outDim[] = {64, 64, 41};
+  for (size_t i = 0; i < config.layers.size(); i++) {
+    t = model.dropout(t, config.dropout_rate);
+    t = model.linear(t, config.layers[i], AC_MODE_NONE);
     t = model.indegree_norm(t);
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
-    if (i != 2) t = model.relu(t);
+    if (i != config.layers.size() - 1) t = model.relu(t);
   }
   model.softmax_cross_entropy(t, label, mask);
   // Use Adam Optimizer by default
   // weight_decay=5e-4 as of https://github.com/tkipf/gcn/blob/master/gcn/train.py
-  AdamOptimizer* optimizer = new AdamOptimizer(&model, 0.01f);
-  optimizer->set_weight_decay(5e-2);
+  AdamOptimizer* optimizer = new AdamOptimizer(&model, config.learning_rate);
+  optimizer->set_weight_decay(config.weight_decay);
   model.optimizer = optimizer;
   model.init(config);
   for (int i = 0; i < config.numEpochs; i++) {
@@ -97,6 +111,21 @@ void parse_input_args(char **argv, int argc, Config& config)
       config.numEpochs = atoi(argv[++i]);
       continue;
     }
+    if (!strcmp(argv[i], "-lr")) 
+    {
+      config.learning_rate = atof(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "-dropout")) || (!strcmp(argv[i], "-dr")))
+    {
+      config.dropout_rate = atof(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "-decay"))  || (!strcmp(argv[i], "-wd")))
+    {
+      config.weight_decay = atof(argv[++i]);
+      continue;
+    }
     if (!strcmp(argv[i], "-file"))
     {
       config.filename = std::string(argv[++i]);
@@ -105,6 +134,16 @@ void parse_input_args(char **argv, int argc, Config& config)
     if ((!strcmp(argv[i], "-verbose")) || (!strcmp(argv[i], "-v")))
     {
       config.verbose = true;
+      continue;
+    }
+    if (!strcmp(argv[i], "-layers"))
+    {
+      std::stringstream ss(std::string(argv[++i]));
+      std::string word;
+      config.layers.clear();
+      while (std::getline(ss, word, '-')) {
+        config.layers.push_back(std::stoi(word));
+      }
       continue;
     }
   }
