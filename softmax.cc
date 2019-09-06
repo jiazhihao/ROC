@@ -30,7 +30,7 @@ SoftmaxCrossEntropy::SoftmaxCrossEntropy(const Model& model,
                                          const Tensor& _logit,
                                          const Tensor& _label,
                                          const Tensor& _mask)
-: GnnOp(_logit, _label, _mask)
+: GnnOp(_logit, _label, _mask), epoch_num(0)
 {
   assert(_logit.numDim == 2);
   assert(_label.numDim == 2);
@@ -59,6 +59,8 @@ void SoftmaxCrossEntropy::backward(const Model& model)
   mode = model.mode;
   Context ctx = model.ctx;
   Runtime* runtime = model.runtime;
+  if (mode == MD_MODE_TRAIN)
+    epoch_num ++;
   IndexLauncher launcher(SOFTMAX_BWD_TASK_ID, model.taskIS,
                          TaskArgument(this, sizeof(SoftmaxCrossEntropy)),
                          model.taskArgs);

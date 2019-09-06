@@ -138,11 +138,18 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
         perf, hiddenDim, rowRight - rowLeft + 1);
     checkCUDA(cudaMemcpy(&perfZC, perf, sizeof(PerfMetrics), cudaMemcpyDeviceToHost));
     std::string modeInfo = (op->mode == MD_MODE_TRAIN) ? "[TRAIN]" : "	[INFER]";
-    fprintf(stderr, "%s train_loss: %.4lf  train_accuracy: %.2lf\%(%d/%d)  val_accuracy: %.2lf\%(%d/%d)  test_accuracy: %.2lf\%(%d/%d)\n",
-            modeInfo.c_str(), perfZC.trainLoss,
-            perfZC.trainCorrect * 100.0f / perfZC.trainAll, perfZC.trainCorrect, perfZC.trainAll,
-            perfZC.valCorrect * 100.0f / perfZC.valAll, perfZC.valCorrect, perfZC.valAll,
-            perfZC.testCorrect * 100.0f / perfZC.testAll, perfZC.testCorrect, perfZC.testAll);
+    if (op->mode == MD_MODE_INFER) {
+      fprintf(stderr, "%s[%d] train_loss: %.4lf  train_accuracy: %.2lf\%(%d/%d)  val_accuracy: %.2lf\%(%d/%d)  test_accuracy: %.2lf\%(%d/%d)\n",
+              modeInfo.c_str(), op->epoch_num, perfZC.trainLoss,
+              perfZC.trainCorrect * 100.0f / perfZC.trainAll, perfZC.trainCorrect, perfZC.trainAll,
+              perfZC.valCorrect * 100.0f / perfZC.valAll, perfZC.valCorrect, perfZC.valAll,
+              perfZC.testCorrect * 100.0f / perfZC.testAll, perfZC.testCorrect, perfZC.testAll);
+      printf("%s[%d] train_loss: %.4lf  train_accuracy: %.2lf\%(%d/%d)  val_accuracy: %.2lf\%(%d/%d)  test_accuracy: %.2lf\%(%d/%d)\n",
+             modeInfo.c_str(), op->epoch_num, perfZC.trainLoss,
+             perfZC.trainCorrect * 100.0f / perfZC.trainAll, perfZC.trainCorrect, perfZC.trainAll,
+             perfZC.valCorrect * 100.0f / perfZC.valAll, perfZC.valCorrect, perfZC.valAll,
+             perfZC.testCorrect * 100.0f / perfZC.testAll, perfZC.testCorrect, perfZC.testAll);
+    }
     // Calculate loss
     softmax_backward<<<GET_BLOCKS(accLogits.rect.volume()), CUDA_NUM_THREADS>>>(
         accLogitsGrad.fbCache, accLabels.fbCache, accMask.fbCache,
@@ -154,11 +161,11 @@ void SoftmaxCrossEntropy::backward_task(const Task *task,
   checkCUDA(cudaMemcpy(accLogitsGrad.ptr, accLogitsGrad.fbCache,
                        accLogitsGrad.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[Softmax] input[%d][%d]: %.4lf\n", i, j, accLogits.ptr[i * hiddenDim + j]);
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("LogitsBack[%d][%d]: %.4lf\n", i, j, accLogitsGrad.ptr[i * hiddenDim + j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[Softmax] input[%d][%d]: %.4lf\n", i, j, accLogits.ptr[i * hiddenDim + j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("LogitsBack[%d][%d]: %.4lf\n", i, j, accLogitsGrad.ptr[i * hiddenDim + j]);
   checkCUDA(cudaDeviceSynchronize());
 }

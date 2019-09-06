@@ -104,9 +104,10 @@ enum MaskType {
 
 struct Config
 {
-  int numGPUs, numMachines, totalGPUs, numEpochs;
+  int numGPUs, numMachines, totalGPUs, numEpochs, decay_steps;
   bool verbose;
   float learning_rate, weight_decay, dropout_rate;
+  float decay_rate;
   std::string filename;
   std::vector<int> layers;
 };
@@ -358,6 +359,8 @@ public:
   static void backward_task(const Task *task,
                             const std::vector<PhysicalRegion> &regions,
                             Context ctx, Runtime *runtime);
+public:
+  int epoch_num;
 };
 
 class NcclTask : public IndexLauncher

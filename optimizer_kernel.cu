@@ -92,8 +92,8 @@ void AdamOptimizer::update_task(const Task* task,
     add_kernel<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
         accW.rect.volume(), 1.0f, src, (DATATYPE*)accWGrad.ptr);
   }
-  fprintf(stderr, "alpha = %.8lf alpha_t = %.8lf decay = %.8lf\n",
-          op->alpha, op->alpha_t, op->weight_decay);
+  //fprintf(stderr, "alpha = %.8lf alpha_t = %.8lf decay = %.8lf\n",
+  //        op->alpha, op->alpha_t, op->weight_decay);
   // Step 2: Adam update
   adam_update<<<GET_BLOCKS(accW.rect.volume()), CUDA_NUM_THREADS>>>(
       accW.rect.volume(), op->alpha_t, op->beta1, op->beta2,

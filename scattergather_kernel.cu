@@ -148,12 +148,12 @@ void ScatterGather::forward_task(const Task *task,
   //copy_kernel<<<GET_BLOCKS(rectOutput.volume()), CUDA_NUM_THREADS>>>(
   //    zcOuptut, manager->fbCache[outputId], rectOutput.volume());
   //printf("ScatterGather::Finish...\n");
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[SG] input[%d][%d]: %.4lf\n", i, j, accInput.ptr[i*hiddenDim+j]);
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[SG] output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i*hiddenDim +j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[SG] input[%d][%d]: %.4lf\n", i, j, accInput.ptr[i*hiddenDim+j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[SG] output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i*hiddenDim +j]);
   checkCUDA(cudaDeviceSynchronize());
 }
 

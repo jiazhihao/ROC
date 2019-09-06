@@ -81,6 +81,7 @@ void AdamOptimizer::next(void)
   beta1_t *= beta1;
   beta2_t *= beta2;
   alpha_t = alpha * sqrt(1 - beta2_t) / (1 - beta1_t);
+  //fprintf(stderr, "lr = %.4lf alpha_t = %.4lf\n", alpha, alpha_t);
 }
 
 void AdamOptimizer::update(const Tensor* p)

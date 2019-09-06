@@ -60,7 +60,7 @@ void Activation::forward_task(const Task *task,
       assert(false);
   }
   double ts_end = Realm::Clock::current_time_in_microseconds();
-  printf("[Activation:forward] preprocess(%.2lfus)\n", ts_end - ts_start);
+  //printf("[Activation:forward] preprocess(%.2lfus)\n", ts_end - ts_start);
   checkCUDNN(cudnnActivationForward(manager->dnn, actiDesc,
                                     &alpha, inTensor, accInput.fbCache,
                                     &beta, inTensor, accOutput.fbCache));
@@ -124,7 +124,7 @@ void Activation::backward_task(const Task *task,
       assert(false);
   }
   double ts_end = Realm::Clock::current_time_in_microseconds();
-  printf("[Activation:backward] preprocess(%.2lfus)\n", ts_end - ts_start);
+  //printf("[Activation:backward] preprocess(%.2lfus)\n", ts_end - ts_start);
   checkCUDNN(cudnnActivationBackward(manager->dnn, actiDesc,
       &alpha, outTensor, accOutput.fbCache,
       outTensor, accOutputGrad.fbCache,
@@ -135,10 +135,10 @@ void Activation::backward_task(const Task *task,
                        cudaMemcpyDeviceToHost));
   checkCUDNN(cudnnDestroyTensorDescriptor(outTensor));
   checkCUDNN(cudnnDestroyActivationDescriptor(actiDesc));
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[Activation:backward](%d, %d): outputGrad(%.4lf) output(%.4lf) input(%.4lf) inputGrad(%.4lf)\n",
-             i, j, accOutputGrad.ptr[i*hiddenDim+j], accOutput.ptr[i*hiddenDim+j],
-             accInput.ptr[i*hiddenDim+j], accInputGrad.ptr[i*hiddenDim+j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[Activation:backward](%d, %d): outputGrad(%.4lf) output(%.4lf) input(%.4lf) inputGrad(%.4lf)\n",
+  //           i, j, accOutputGrad.ptr[i*hiddenDim+j], accOutput.ptr[i*hiddenDim+j],
+  //           accInput.ptr[i*hiddenDim+j], accInputGrad.ptr[i*hiddenDim+j]);
   checkCUDA(cudaDeviceSynchronize());
 }

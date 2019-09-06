@@ -105,15 +105,15 @@ void Linear::forward_task(const Task *task,
   checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
                        accOutput.rect.volume() * sizeof(DATATYPE),
                        cudaMemcpyDeviceToHost));
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[Linear:forward] input[%d][%d]: %.4lf\n", i, j, accInput.ptr[i * outDim + j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[Linear:forward] input[%d][%d]: %.4lf\n", i, j, accInput.ptr[i * outDim + j]);
   //for (int i = 0; i < 8; i++)
   //  for (int j = 0; j < 8; j++)
   //    printf("[Linear:forward] weight[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * outDim + j]);
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[Linear:forward] output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * outDim + j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[Linear:forward] output[%d][%d]: %.4lf\n", i, j, accOutput.ptr[i * outDim + j]);
   checkCUDA(cudaDeviceSynchronize());
 }
 
@@ -235,11 +235,11 @@ void Linear::backward_task(const Task *task,
   //checkCUDA(cudaMemcpy((DATATYPE*)accOutputGrad.ptr, accOutputGrad.fbCache,
   //                     accOutputGrad.rect.volume() * sizeof(DATATYPE),
   //                     cudaMemcpyDeviceToHost));
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[Linear:backward] OutputGrad[%d][%d]: %.4lf\n", i, j, accOutputGrad.ptr[i * outDim + j]);
-  for (int i = 0; i < 8; i++)
-    for (int j = 0; j < 8; j++)
-      printf("[Linear:backward] InputGrad[%d][%d]: %.4lf\n", i, j, accInputGrad.ptr[i * inDim + j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[Linear:backward] OutputGrad[%d][%d]: %.4lf\n", i, j, accOutputGrad.ptr[i * outDim + j]);
+  //for (int i = 0; i < 8; i++)
+  //  for (int j = 0; j < 8; j++)
+  //    printf("[Linear:backward] InputGrad[%d][%d]: %.4lf\n", i, j, accInputGrad.ptr[i * inDim + j]);
   checkCUDA(cudaDeviceSynchronize());
 }

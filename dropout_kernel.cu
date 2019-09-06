@@ -94,7 +94,7 @@ void Dropout::forward_task(const Task *task,
   ResourceManager::ReservedSpace space = manager->reservedSpace[outputLR];
   cudnnDropoutDescriptor_t dropoutDesc = manager->dropoutDesc[outputLR];
   double ts_end = Realm::Clock::current_time_in_microseconds();
-  printf("[Dropout::Fwd] pre-process %.4lfus\n", ts_end - ts_start);
+  //printf("[Dropout::Fwd] pre-process %.4lfus\n", ts_end - ts_start);
   checkCUDNN(cudnnDropoutForward(manager->dnn, dropoutDesc, inputDesc,
       accInput.fbCache, outputDesc, accOutput.fbCache, space.ptr, space.size));
   checkCUDA(cudaMemcpy(accOutput.ptr, accOutput.fbCache,
@@ -145,7 +145,7 @@ void Dropout::backward_task(const Task *task,
   ResourceManager::ReservedSpace space = manager->reservedSpace[outputGradLR];
   cudnnDropoutDescriptor_t dropoutDesc = manager->dropoutDesc[outputGradLR];
   double ts_end = Realm::Clock::current_time_in_microseconds();
-  printf("[Dropout::Bwd] pre-process %.4lfus\\n", ts_end - ts_start);
+  //printf("[Dropout::Bwd] pre-process %.4lfus\n", ts_end - ts_start);
   checkCUDNN(cudnnDropoutBackward(manager->dnn, dropoutDesc, inputDesc,
       accOutputGrad.fbCache, outputDesc, accInputGrad.fbCache, space.ptr, space.size));
   checkCUDA(cudaMemcpy(accInputGrad.ptr, accInputGrad.fbCache,

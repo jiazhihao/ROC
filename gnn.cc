@@ -35,6 +35,8 @@ void top_level_task(const Task *task,
   config.learning_rate = 0.01f;
   config.weight_decay = 0.05f;
   config.dropout_rate = 0.5f;
+  config.decay_rate = 1.0f;
+  config.decay_steps = 100;
   config.layers.clear();
   {
     const InputArgs &command_args = HighLevelRuntime::get_input_args();
@@ -45,9 +47,11 @@ void top_level_task(const Task *task,
     fprintf(stderr, "        ===== GNN settings =====\n");
     fprintf(stderr, "        dataset = %s\n"
             "        num_epochs = %d learning_rate = %.4lf\n"
-            "        weight_decay = %.4lf dropout_rate = %.4lf\n",
+            "        weight_decay = %.4lf dropout_rate = %.4lf\n"
+            "        decay_rate = %.4lf decay_steps = %d\n",
             config.filename.c_str(), config.numEpochs,
-            config.learning_rate, config.weight_decay, config.dropout_rate);
+            config.learning_rate, config.weight_decay, config.dropout_rate,
+            config.decay_rate, config.decay_steps);
     fprintf(stderr, "        Layers:");
     for (size_t i = 0; i < config.layers.size(); i++)
       fprintf(stderr, " %d", config.layers[i]);
@@ -71,11 +75,17 @@ void top_level_task(const Task *task,
   //int outDim[] = {64, 64, 41};
   for (size_t i = 0; i < config.layers.size(); i++) {
     t = model.dropout(t, config.dropout_rate);
+    Tensor input = t;
     t = model.linear(t, config.layers[i], AC_MODE_NONE);
     t = model.indegree_norm(t);
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
     if (i != config.layers.size() - 1) t = model.relu(t);
+    if (config.layers.size() > 2) {
+      //if (t.dims[0] != input.dims[0])
+        input = model.linear(input, t.dims[0], AC_MODE_NONE);
+      t = model.add(t, input);
+    }
   }
   model.softmax_cross_entropy(t, label, mask);
   // Use Adam Optimizer by default
@@ -85,6 +95,8 @@ void top_level_task(const Task *task,
   model.optimizer = optimizer;
   model.init(config);
   for (int i = 0; i < config.numEpochs; i++) {
+    if ((i != 0) && (i % config.decay_steps == 0))
+      optimizer->alpha *= config.decay_rate;
     model.train_mode();
     model.zero_gradients();
     model.forward();
@@ -124,6 +136,16 @@ void parse_input_args(char **argv, int argc, Config& config)
     if ((!strcmp(argv[i], "-decay"))  || (!strcmp(argv[i], "-wd")))
     {
       config.weight_decay = atof(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "-decay-rate"))  || (!strcmp(argv[i], "-dr")))
+    {
+      config.decay_rate = atof(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "-decay-step"))  || (!strcmp(argv[i], "-ds")))
+    {
+      config.decay_steps = atoi(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "-file"))
