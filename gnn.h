@@ -104,7 +104,7 @@ enum MaskType {
 
 struct Config
 {
-  int numGPUs, numMachines, totalGPUs, numEpochs, decay_steps;
+  int numGPUs, numMachines, totalGPUs, numEpochs, decay_steps, seed;
   bool verbose;
   float learning_rate, weight_decay, dropout_rate;
   float decay_rate;

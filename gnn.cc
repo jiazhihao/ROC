@@ -37,6 +37,7 @@ void top_level_task(const Task *task,
   config.dropout_rate = 0.5f;
   config.decay_rate = 1.0f;
   config.decay_steps = 100;
+  config.seed = 1;
   config.layers.clear();
   {
     const InputArgs &command_args = HighLevelRuntime::get_input_args();
@@ -45,13 +46,14 @@ void top_level_task(const Task *task,
     parse_input_args(argv, argc, config);
     log_gnn.print("GNN settings: filename = %s", config.filename.c_str());
     fprintf(stderr, "        ===== GNN settings =====\n");
-    fprintf(stderr, "        dataset = %s\n"
+    fprintf(stderr, "        dataset = %s seed = %d\n"
             "        num_epochs = %d learning_rate = %.4lf\n"
             "        weight_decay = %.4lf dropout_rate = %.4lf\n"
             "        decay_rate = %.4lf decay_steps = %d\n",
-            config.filename.c_str(), config.numEpochs,
+            config.filename.c_str(), config.seed, config.numEpochs,
             config.learning_rate, config.weight_decay, config.dropout_rate,
             config.decay_rate, config.decay_steps);
+    std::srand(config.seed);
     fprintf(stderr, "        Layers:");
     for (size_t i = 0; i < config.layers.size(); i++)
       fprintf(stderr, " %d", config.layers[i]);
@@ -63,8 +65,8 @@ void top_level_task(const Task *task,
   Graph graph(ctx, runtime, config);
   // Model Construction
   Model model(graph, ctx, runtime);
-  Tensor input = model.create_node_tensor<DATATYPE>(602);
-  Tensor label = model.create_node_tensor<DATATYPE>(41);
+  Tensor input = model.create_node_tensor<DATATYPE>(config.layers[0]);
+  Tensor label = model.create_node_tensor<DATATYPE>(config.layers[config.layers.size()-1]);
   Tensor mask = model.create_node_tensor<int>(1);
   model.load_features(input, config.filename);
   model.load_labels(label, config.filename);
@@ -73,7 +75,7 @@ void top_level_task(const Task *task,
   Tensor t = input;
   // Tensor t = model.linear(input, 8, AC_MODE_RELU);
   //int outDim[] = {64, 64, 41};
-  for (size_t i = 0; i < config.layers.size(); i++) {
+  for (size_t i = 1; i < config.layers.size(); i++) {
     t = model.dropout(t, config.dropout_rate);
     Tensor input = t;
     t = model.linear(t, config.layers[i], AC_MODE_NONE);
@@ -81,7 +83,7 @@ void top_level_task(const Task *task,
     t = model.scatter_gather(t);
     t = model.indegree_norm(t);
     if (i != config.layers.size() - 1) t = model.relu(t);
-    if (config.layers.size() > 2) {
+    if (config.layers.size() > 3) {
       //if (t.dims[0] != input.dims[0])
         input = model.linear(input, t.dims[0], AC_MODE_NONE);
       t = model.add(t, input);
@@ -113,6 +115,11 @@ void parse_input_args(char **argv, int argc, Config& config)
 {
   for (int i = 1; i <argc; i++)
   {
+    if (!strcmp(argv[i], "-seed"))
+    {
+      config.seed = atoi(argv[++i]);
+      continue;
+    }
     if ((!strcmp(argv[i], "-ng")) || (!strcmp(argv[i], "-ll:gpu"))) 
     {
       config.numGPUs = atoi(argv[++i]);
