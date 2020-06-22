@@ -43,7 +43,7 @@ void Dropout::init_task(const Task *task,
       3, dims, strides));
   ResourceManager::ReservedSpace space;
   checkCUDNN(cudnnDropoutGetReserveSpaceSize(outputDesc, &(space.size)));
-  off_t offset = manager->allocator->alloc_bytes(space.size);
+  off_t offset = manager->allocator->alloc_bytes_local(space.size);
   assert(offset >= 0);
   space.ptr = manager->allocator->get_direct_ptr(offset, 0);
   LogicalRegion outputLR = regions[0].get_logical_region();

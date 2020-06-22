@@ -1,0 +1,6 @@
+[submodule "legion"]
+	path = legion
+	url = https://gitlab.com/StanfordLegion/legion.git
+[submodule "cub"]
+	path = cub
+	url = https://github.com/NVlabs/cub.git

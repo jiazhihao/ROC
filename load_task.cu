@@ -368,7 +368,7 @@ ResourceManager* init_task_impl(const Task *task,
     else
       manager->fbCache[i].volume = graph->maxHidden * (rowRight - rowLeft + 1);
     manager->fbCache[i].region = LogicalRegion::NO_REGION;
-    off_t offset = memFBImpl->alloc_bytes(manager->fbCache[i].volume * sizeof(DATATYPE));
+    off_t offset = memFBImpl->alloc_bytes_local(manager->fbCache[i].volume * sizeof(DATATYPE));
     assert(offset >= 0);
     manager->fbCache[i].ptr = (DATATYPE*) memFBImpl->get_direct_ptr(offset, 0);
   }
